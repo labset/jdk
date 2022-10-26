@@ -1,0 +1,12 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "extensions": [
+    "vscjava.vscode-java-pack",
+    "ms-vscode.cpptools"
+  ],
+  "settings": {
+    "java.home": "/usr/local/openjdk-18"
+  }
+}
