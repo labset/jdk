@@ -7,6 +7,9 @@
     "ms-vscode.cpptools"
   ],
   "settings": {
-    "java.home": "/usr/local/openjdk-18"
+    "java.home": "/usr/local/openjdk-18",
+    "java.project.sourcePaths": [
+      "src/jdk.compiler/share/classes"
+    ]
   }
 }
