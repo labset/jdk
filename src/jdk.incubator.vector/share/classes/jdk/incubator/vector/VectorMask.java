@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -108,8 +108,6 @@ import java.util.Objects;
  * }</pre>
  *
  * </ul>
- * @param <E> the boxed version of {@code ETYPE},
- *           the element type of a vector
  *
  * <h2>Value-based classes and identity operations</h2>
  *
@@ -128,9 +126,12 @@ import java.util.Objects;
  * {@code static final} constants, but storing them in other Java
  * fields or in array elements, while semantically valid, may incur
  * performance penalties.
+ *
+ * @param <E> the boxed version of {@code ETYPE},
+ *           the element type of a vector
  */
 @SuppressWarnings("exports")
-public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport.VectorMask<E> {
+public abstract sealed class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport.VectorMask<E> permits AbstractMask {
     VectorMask(boolean[] bits) { super(bits); }
 
     /**
@@ -206,8 +207,8 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
         int laneCount = vsp.laneCount();
         offset = VectorIntrinsics.checkFromIndexSize(offset, laneCount, bits.length);
         return VectorSupport.load(
-                vsp.maskType(), vsp.elementType(), laneCount,
-                bits, (long) offset + Unsafe.ARRAY_BOOLEAN_BASE_OFFSET,
+                vsp.maskType(), vsp.laneTypeOrdinal(), laneCount,
+                bits, (long) offset + Unsafe.ARRAY_BOOLEAN_BASE_OFFSET, false,
                 bits, offset, vsp,
                 (c, idx, s)
                   -> s.opm(n -> c[((int )idx) + n]));
@@ -239,7 +240,7 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
     public static <E> VectorMask<E> fromLong(VectorSpecies<E> species, long bits) {
         AbstractSpecies<E> vsp = (AbstractSpecies<E>) species;
         bits = bits & (0xFFFFFFFFFFFFFFFFL >>> (64 - vsp.laneCount()));
-        return VectorSupport.fromBitsCoerced(vsp.maskType(), vsp.elementType(), vsp.laneCount(), bits,
+        return VectorSupport.fromBitsCoerced(vsp.maskType(), vsp.laneTypeOrdinal(), vsp.laneCount(), bits,
                                              VectorSupport.MODE_BITS_COERCED_LONG_TO_MASK, vsp,
                                              (m, s) -> {
                                                  if (m == (m >> 1)) {
@@ -341,9 +342,9 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
     public abstract boolean anyTrue();
 
     /**
-     * Returns {@code true} if all of the mask lanes are set.
+     * Returns {@code true} if all the mask lanes are set.
      *
-     * @return {@code true} if all of the mask lanes are set, otherwise
+     * @return {@code true} if all the mask lanes are set, otherwise
      * {@code false}.
      */
     public abstract boolean allTrue();
@@ -398,20 +399,18 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
     public abstract VectorMask<E> or(VectorMask<E> m);
 
     /**
-     * Determines logical equivalence of this mask
-     * to a second input mask (as boolean {@code a==b}
-     * or {@code a^~b}).
+     * Determines logical symmetric difference
+     * (as {@code a^b}) of this mask and a second input mask.
      * <p>
-     * This is a lane-wise binary operation tests each
-     * corresponding pair of mask bits for equality.
-     * It is also equivalent to a inverse {@code XOR}
-     * operation ({@code ^~}) on the mask bits.
+     * This is a lane-wise binary operation which applies
+     * the logical {@code XOR} operation
+     * ({@code ^}) to each corresponding pair of mask bits.
      *
      * @param m the input mask
-     * @return a mask showing where the two input masks were equal
-     * @see #equals
+     * @return the result of logically disjunctively disjoining the two
+     * input masks
      */
-    public abstract VectorMask<E> eq(VectorMask<E> m);
+    public abstract VectorMask<E> xor(VectorMask<E> m);
 
     /**
      * Logically subtracts a second input mask
@@ -425,6 +424,23 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
      * @return the result of logically subtracting the second mask from this mask
      */
     public abstract VectorMask<E> andNot(VectorMask<E> m);
+
+    /**
+     * Determines logical equivalence of this mask
+     * to a second input mask (as boolean {@code a==b}
+     * or {@code a^~b}).
+     * <p>
+     * This is a lane-wise binary operation tests each
+     * corresponding pair of mask bits for equality.
+     * It is also equivalent to the logical {@code XNOR}
+     * operation ({@code ^~}) to each corresponding pair
+     * of mask bits.
+     *
+     * @param m the input mask
+     * @return a mask showing where the two input masks were equal
+     * @see #equals
+     */
+    public abstract VectorMask<E> eq(VectorMask<E> m);
 
     /**
      * Logically negates this mask.
@@ -512,7 +528,7 @@ public abstract class VectorMask<E> extends jdk.internal.vm.vector.VectorSupport
      * For each mask lane, where {@code N} is the mask lane index, if
      * the mask lane is set at {@code N} then the specific non-default
      * value {@code -1} is placed into the resulting vector at lane
-     * index {@code N}.  Otherwise the default element value {@code 0}
+     * index {@code N}.  Otherwise, the default element value {@code 0}
      * is placed into the resulting vector at lane index {@code N}.
      *
      * Whether the element type ({@code ETYPE}) of this mask is

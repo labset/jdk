@@ -1,68 +1,66 @@
 /*
- *  Copyright (c) 2021, 2022, Oracle and/or its affiliates. All rights reserved.
- *  DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates. All rights reserved.
+ * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
- *  This code is free software; you can redistribute it and/or modify it
- *  under the terms of the GNU General Public License version 2 only, as
- *  published by the Free Software Foundation.
+ * This code is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU General Public License version 2 only, as
+ * published by the Free Software Foundation.
  *
- *  This code is distributed in the hope that it will be useful, but WITHOUT
- *  ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- *  FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
- *  version 2 for more details (a copy is included in the LICENSE file that
- *  accompanied this code).
+ * This code is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License
+ * version 2 for more details (a copy is included in the LICENSE file that
+ * accompanied this code).
  *
- *  You should have received a copy of the GNU General Public License version
- *  2 along with this work; if not, write to the Free Software Foundation,
- *  Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
+ * You should have received a copy of the GNU General Public License version
+ * 2 along with this work; if not, write to the Free Software Foundation,
+ * Inc., 51 Franklin St, Fifth Floor, Boston, MA 02110-1301 USA.
  *
- *  Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
- *  or visit www.oracle.com if you need additional information or have any
- *  questions.
+ * Please contact Oracle, 500 Oracle Parkway, Redwood Shores, CA 94065 USA
+ * or visit www.oracle.com if you need additional information or have any
+ * questions.
  */
 
 /*
  * @test
- * @enablePreview
- * @run testng TestSegmentOffset
+ * @run junit TestSegmentOffset
  */
 
+import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
-import java.lang.foreign.MemorySession;
-import org.testng.annotations.DataProvider;
-import org.testng.annotations.Test;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.function.IntFunction;
+import java.util.stream.Stream;
+
 import static java.lang.System.out;
 import static java.lang.foreign.ValueLayout.JAVA_BYTE;
-import static org.testng.Assert.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-public class TestSegmentOffset {
+final class TestSegmentOffset {
 
-    @Test(dataProvider = "slices")
-    public void testOffset(SegmentSlice s1, SegmentSlice s2) {
+    @ParameterizedTest
+    @MethodSource("slices")
+    void testOffset(SegmentSlice s1, SegmentSlice s2) {
         if (s1.contains(s2)) {
             // check that a segment and its overlapping segment point to same elements
-            long offset = s1.segment.segmentOffset(s2.segment);
+            long offset = s1.offset(s2);
             for (int i = 0; i < s2.size(); i++) {
                 out.format("testOffset s1:%s, s2:%s, offset:%d, i:%s\n", s1, s2, offset, i);
                 byte expected = s2.segment.get(JAVA_BYTE, i);
                 byte found = s1.segment.get(JAVA_BYTE, i + offset);
-                assertEquals(found, expected);
-            }
-        } else if (s1.kind != s2.kind) {
-            // check that offset from s1 to s2 fails
-            try {
-                long offset = s1.segment.segmentOffset(s2.segment);
-                out.format("testOffset s1:%s, s2:%s, offset:%d\n", s1, s2, offset);
-                fail("offset unexpectedly passed!");
-            } catch (UnsupportedOperationException ex) {
-                assertTrue(ex.getMessage().contains("Cannot compute offset from native to heap (or vice versa)."));
+                assertEquals(expected, found);
             }
         } else if (!s2.contains(s1)) {
             // disjoint segments - check that offset is out of bounds
-            long offset = s1.segment.segmentOffset(s2.segment);
+            long offset = s1.offset(s2);
             for (int i = 0; i < s2.size(); i++) {
                 out.format("testOffset s1:%s, s2:%s, offset:%d, i:%s\n", s1, s2, offset, i);
                 s2.segment.get(JAVA_BYTE, i);
@@ -76,10 +74,10 @@ public class TestSegmentOffset {
         }
     }
 
-    static class SegmentSlice {
+    final static class SegmentSlice {
 
         enum Kind {
-            NATIVE(i -> MemorySegment.allocateNative(i, MemorySession.openConfined())),
+            NATIVE(i -> Arena.ofAuto().allocate(i, 1)),
             ARRAY(i -> MemorySegment.ofArray(new byte[i]));
 
             final IntFunction<MemorySegment> segmentFactory;
@@ -98,7 +96,7 @@ public class TestSegmentOffset {
         final int last;
         final MemorySegment segment;
 
-        public SegmentSlice(Kind kind, int first, int last, MemorySegment segment) {
+        SegmentSlice(Kind kind, int first, int last, MemorySegment segment) {
             this.kind = kind;
             this.first = first;
             this.last = last;
@@ -114,10 +112,14 @@ public class TestSegmentOffset {
         int size() {
             return last - first + 1;
         }
+
+        long offset(SegmentSlice that) {
+            return that.segment.address() - segment.address();
+        }
     }
 
-    @DataProvider(name = "slices")
-    static Object[][] slices() {
+
+    static Stream<Arguments> slices() {
         int[] sizes = { 16, 8, 4, 2, 1 };
         List<SegmentSlice> slices = new ArrayList<>();
         for (SegmentSlice.Kind kind : SegmentSlice.Kind.values()) {
@@ -134,12 +136,15 @@ public class TestSegmentOffset {
                 }
             }
         }
-        Object[][] sliceArray = new Object[slices.size() * slices.size()][];
+        SegmentSlice[][] sliceArray = new SegmentSlice[slices.size() * slices.size()][];
         for (int i = 0 ; i < slices.size() ; i++) {
             for (int j = 0 ; j < slices.size() ; j++) {
-                sliceArray[i * slices.size() + j] = new Object[] { slices.get(i), slices.get(j) };
+                sliceArray[i * slices.size() + j] = new SegmentSlice[] { slices.get(i), slices.get(j) };
             }
         }
-        return sliceArray;
+        return Arrays.stream(sliceArray)
+                // Only consider segment slices of the same kind
+                .filter(a -> a[0].kind == a[1].kind)
+                .map(Arguments::of);
     }
 }

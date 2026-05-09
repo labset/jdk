@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,12 +23,13 @@
  */
 package com.sun.hotspot.igv.graph;
 
-import java.awt.Dimension;
 import com.sun.hotspot.igv.data.InputBlock;
+import com.sun.hotspot.igv.data.InputNode;
 import com.sun.hotspot.igv.layout.Cluster;
+import com.sun.hotspot.igv.layout.Vertex;
+import java.awt.Point;
 import java.awt.Rectangle;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.*;
 
 /**
  *
@@ -36,17 +37,15 @@ import java.util.Set;
  */
 public class Block implements Cluster {
 
-    private InputBlock inputBlock;
+    protected final InputBlock inputBlock;
     private Rectangle bounds;
-    private Diagram diagram;
+    private final Diagram diagram;
+    private List<Integer> liveRangeIds;
+    int liveRangeSeparation = -1;
 
     public Block(InputBlock inputBlock, Diagram diagram) {
         this.inputBlock = inputBlock;
         this.diagram = diagram;
-    }
-
-    public Cluster getOuter() {
-        return null;
     }
 
     public InputBlock getInputBlock() {
@@ -63,16 +62,53 @@ public class Block implements Cluster {
         return succs;
     }
 
-    public Dimension getNodeOffset() {
-        return new Dimension(0, -Figure.getVerticalOffset());
+    public List<? extends Vertex> getVertices() {
+        List<Vertex> vertices = new ArrayList<>();
+        for (InputNode inputNode : inputBlock.getNodes()) {
+            if (diagram.hasFigure(inputNode)) {
+                vertices.add(diagram.getFigure(inputNode));
+            }
+        }
+        return vertices;
+    }
+
+    public int getLiveRangeSeparation() {
+        assert liveRangeSeparation > 0;
+        return liveRangeSeparation;
     }
 
     public void setBounds(Rectangle r) {
         this.bounds = r;
     }
 
+    @Override
+    public void setPosition(Point p) {
+        if (bounds != null) {
+            bounds.setLocation(p);
+        }
+    }
+
+    @Override
+    public Point getPosition() {
+        return bounds.getLocation();
+    }
+
+    @Override
     public Rectangle getBounds() {
         return bounds;
+    }
+
+    public List<Integer> getLiveRangeIds() {
+        return liveRangeIds;
+    }
+
+    public void setLiveRangeIds(List<Integer> liveRangeIds) {
+        this.liveRangeIds = liveRangeIds;
+        int extraDigits = 0;
+        if (!liveRangeIds.isEmpty()) {
+            extraDigits = (int)java.lang.Math.log10(Collections.max(liveRangeIds));
+        }
+        liveRangeSeparation = 20 + extraDigits * 7;
     }
 
     public int compareTo(Cluster o) {
@@ -82,6 +118,19 @@ public class Block implements Cluster {
     @Override
     public String toString() {
         return inputBlock.getName();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (this == obj) return true;
+        if (obj == null || getClass() != obj.getClass()) return false;
+        Block other = (Block) obj;
+        return inputBlock.equals(other.inputBlock);
+    }
+
+    @Override
+    public int hashCode() {
+        return inputBlock.hashCode();
     }
 }
 

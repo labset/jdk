@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,15 +32,20 @@ import java.util.List;
 import jdk.jfr.Event;
 import jdk.jfr.FlightRecorder;
 import jdk.jfr.Recording;
+import jdk.vm.ci.meta.MetaAccessProvider;
+import jdk.vm.ci.meta.ResolvedJavaMethod;
+import jdk.vm.ci.meta.ConstantPool;
+import jdk.vm.ci.runtime.JVMCI;
 
 /**
- * @test TestGetEventWriter
- * @key jfr
+ * @test id=default
+ * @requires vm.flagless
  * @requires vm.hasJFR
  * @library /test/lib
+ * @modules jdk.internal.vm.ci/jdk.vm.ci.meta
+ *          jdk.internal.vm.ci/jdk.vm.ci.runtime
  *
  * @compile PlaceholderEventWriter.java
- * @compile PlaceholderEventWriterFactory.java
  * @compile E.java
  * @compile NonEvent.java
  * @compile RegisteredTrueEvent.java
@@ -63,6 +68,29 @@ import jdk.jfr.Recording;
  * @run main/othervm/timeout=300 -Xcomp -XX:TieredStopAtLevel=4 -XX:-TieredCompilation -XX:-UseInterpreter -Dinterpreted=false
  *      jdk.jfr.jvm.TestGetEventWriter
  */
+
+/**
+ * @test id=jvmci
+ * @requires vm.flagless
+ * @requires vm.hasJFR
+ * @requires vm.jvmci
+ * @library /test/lib
+ * @modules jdk.internal.vm.ci/jdk.vm.ci.meta
+ *          jdk.internal.vm.ci/jdk.vm.ci.runtime
+ *
+ * @compile PlaceholderEventWriter.java
+ * @compile E.java
+ * @compile NonEvent.java
+ * @compile RegisteredTrueEvent.java
+ * @compile RegisteredFalseEvent.java
+ * @compile MyCommitRegisteredTrueEvent.java
+ * @compile MyCommitRegisteredFalseEvent.java
+ * @compile StaticCommitEvent.java
+ *
+ * @run main/othervm -XX:+UnlockExperimentalVMOptions -XX:+EnableJVMCI -Dtest.jvmci=true --add-exports=jdk.jfr/jdk.jfr.internal.event=ALL-UNNAMED
+ *      jdk.jfr.jvm.TestGetEventWriter
+ */
+
 public class TestGetEventWriter {
 
     static class InitializationEvent extends Event {
@@ -75,10 +103,10 @@ public class TestGetEventWriter {
             InitializationEvent e  = new InitializationEvent();
             e.commit();
         }
-        // Make sure EventWriterFactory can be accessed.
-        Class<?> clazz = Class.forName("jdk.jfr.internal.event.EventWriterFactory");
+        // Make sure EventWriter class can be accessed.
+        Class<?> clazz = Class.forName("jdk.jfr.internal.event.EventWriter");
         if (clazz == null) {
-            throw new Exception("Test error, not able to access jdk.jfr.internal.event.EventWriterFactory class");
+            throw new Exception("Test error, not able to access jdk.jfr.internal.event.EventWriter class");
         }
         testRegisteredTrueEvent();
         testRegisteredFalseEvent();
@@ -92,7 +120,7 @@ public class TestGetEventWriter {
 
     // The class does not inherit jdk.jfr.Event and, as such, does not implement the
     // API. It has its own stand-alone "commit()V", which is not an override, that
-    // attempts to resolve and link against EventWriterFactory. This user implementation
+    // attempts to resolve and link against EventWriter. This user implementation
     // is not blessed for linkage.
     private static void testNonEvent() throws Throwable {
         Runnable e = newEventObject("NonEvent");
@@ -101,6 +129,7 @@ public class TestGetEventWriter {
             throw new RuntimeException("Should not reach here");
         } catch (IllegalAccessError iae) {
             // OK, as expected
+            maybeCheckJVMCI(e.getClass(), "commit");
             return;
         }
     }
@@ -115,6 +144,7 @@ public class TestGetEventWriter {
             throw new RuntimeException("Should not reach here");
         } catch (IllegalAccessError iae) {
             // OK, as expected
+            maybeCheckJVMCI(e.getClass(), "commit");
             return;
         }
     }
@@ -134,6 +164,7 @@ public class TestGetEventWriter {
             throw new RuntimeException("Should not reach here");
         } catch (IllegalAccessError iae) {
             // OK, as expected
+            maybeCheckJVMCI(e.getClass(), "commit");
         }
         try {
             FlightRecorder.register(e.getClass());
@@ -145,7 +176,7 @@ public class TestGetEventWriter {
     }
 
     // The user has implemented another method, "myCommit()V", not an override nor
-    // overload. that attempts to resolve and link EventWriterFactory. This will fail,
+    // overload. that attempts to resolve and link EventWriter. This will fail,
     // because "myCommit()V" is not blessed for linkage.
     private static void testMyCommitRegisteredTrue() throws Throwable {
         Runnable e = newEventObject("MyCommitRegisteredTrueEvent");
@@ -154,6 +185,7 @@ public class TestGetEventWriter {
             throw new RuntimeException("Should not reach here");
         } catch (IllegalAccessError iae) {
             // OK, as expected
+            maybeCheckJVMCI(e.getClass(), "myCommit");
             return;
         }
     }
@@ -170,6 +202,7 @@ public class TestGetEventWriter {
             throw new RuntimeException("Should not reach here");
         } catch (IllegalAccessError iae) {
             // OK, as expected
+            maybeCheckJVMCI(e.getClass(), "myCommit");
         }
         // Instrumentation added.
         FlightRecorder.register(e.getClass().asSubclass(Event.class));
@@ -187,6 +220,7 @@ public class TestGetEventWriter {
             throw new RuntimeException("Should not reach here");
         } catch (IllegalAccessError iae) {
             // OK, as expected
+            maybeCheckJVMCI(e.getClass(), "commit");
         }
     }
 
@@ -194,10 +228,9 @@ public class TestGetEventWriter {
         public void myCommit() throws Throwable {
             try {
                 Class<?> ew = Class.forName("jdk.jfr.internal.event.EventWriter");
-                MethodType t = MethodType.methodType(ew, List.of(long.class));
-                Class<?> factory = Class.forName("jdk.jfr.internal.event.EventWriterFactory");
-                MethodHandle mh = MethodHandles.lookup().findStatic(factory, "getEventWriter", t);
-                mh.invoke(Long.valueOf(4711)); // throws IllegalAccessException
+                MethodType t = MethodType.methodType(ew, List.of());
+                MethodHandle mh = MethodHandles.lookup().findStatic(ew, "getEventWriter", t);
+                mh.invoke(); // throws IllegalAccessException
             } catch (ClassNotFoundException | SecurityException e) {
                 throw new RuntimeException(e);
             }
@@ -226,8 +259,8 @@ public class TestGetEventWriter {
         public void myCommit() throws Throwable {
             Class<?> c;
             try {
-                c = Class.forName("jdk.jfr.internal.event.EventWriterFactory");
-                Method m = c.getMethod("getEventWriter", new Class[] {long.class});
+                c = Class.forName("jdk.jfr.internal.event.EventWriter");
+                Method m = c.getMethod("getEventWriter", new Class[0]);
                 m.invoke(null, Long.valueOf(4711)); // throws InternalError
             } catch (ClassNotFoundException | SecurityException e) {
                 throw new RuntimeException(e);
@@ -247,7 +280,7 @@ public class TestGetEventWriter {
         } catch (InternalError ie) {
             if (ie.getCause() instanceof IllegalAccessException iaex) {
                 if (iaex.getCause() instanceof IllegalAccessError iae) {
-                    if (iae.getMessage().contains("getEventWriter(long)")) {
+                    if (iae.getMessage().contains("getEventWriter()")) {
                         // OK, as expected
                         return;
                     }
@@ -309,12 +342,63 @@ public class TestGetEventWriter {
         byte[] bytes = is.readAllBytes();
         is.close();
         bytes = replace(bytes, "jdk/jfr/jvm/E", "jdk/jfr/Event");
-        bytes = replace(bytes, "jdk/jfr/jvm/PlaceholderEventWriterFactory", "jdk/jfr/internal/event/EventWriterFactory");
         bytes = replace(bytes, "jdk/jfr/jvm/PlaceholderEventWriter", "jdk/jfr/internal/event/EventWriter");
         BytesClassLoader bc = new BytesClassLoader(bytes, fullName);
         Class<?> clazz = bc.loadClass(fullName);
         Constructor<?> constructor = clazz.getConstructor(new Class[0]);
         System.out.println("About to invoke " + fullName + ".commit()");
         return (T) constructor.newInstance();
+    }
+
+    private static ResolvedJavaMethod findCommitMethod(MetaAccessProvider metaAccess, Class<?> eventClass, String commitName) {
+        for (Method m : eventClass.getMethods()) {
+            if (m.getName().equals(commitName)) {
+                return metaAccess.lookupJavaMethod(m);
+            }
+        }
+        throw new AssertionError("could not find " + commitName + " method in " + eventClass);
+    }
+
+    // Factor out test.jvmci system property check to reduce unecessary work in -Xcomp.
+    private static void maybeCheckJVMCI(Class<?> eventClass, String commitName) throws Throwable {
+        if (!Boolean.getBoolean("test.jvmci")) {
+            return;
+        }
+        checkJVMCI(eventClass, commitName);
+    }
+
+    /**
+     * Checks that JVMCI prevents unblessed access to {@code EventWriter.getEventWriter()}.
+     */
+    private static void checkJVMCI(Class<?> eventClass, String commitName) throws Throwable {
+        MetaAccessProvider metaAccess = JVMCI.getRuntime().getHostJVMCIBackend().getMetaAccess();
+        ResolvedJavaMethod commit = findCommitMethod(metaAccess, eventClass, commitName);
+        ConstantPool cp = commit.getConstantPool();
+
+        // Search for first INVOKESTATIC instruction in commit method which is expected
+        // to be the call to jdk.jfr.internal.event.EventWriter.getEventWriter().
+        final int INVOKESTATIC = 184;
+        byte[] code = commit.getCode();
+        for (int bci = 0; bci < code.length; bci++) {
+            int b = code[bci] & 0xff;
+            if (b == INVOKESTATIC) {
+                int cpi = ((code[bci + 1] & 0xff) << 8) | (code[bci + 2] & 0xff);
+                try {
+                    cp.lookupMethod(cpi, 184, commit);
+                    throw new AssertionError("Expected IllegalAccessError");
+                } catch (IllegalAccessError e) {
+                }
+                try {
+                    // Test looking up with null caller
+                    cp.lookupMethod(cpi, 184, null);
+                    throw new AssertionError("Expected IllegalAccessError");
+                } catch (IllegalAccessError e) {
+                }
+
+                // Ignore all subsequent instructions
+                return;
+            }
+        }
+        throw new AssertionError(eventClass + ": did not find INVOKESTATIC in " + commit.format("%H.%n(%p)"));
     }
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,8 +29,8 @@
  * @modules java.base/jdk.internal.misc
  *          java.management
  *
- * @build sun.hotspot.WhiteBox
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions
  *                   -XX:+WhiteBoxAPI -XX:CompileCommand=compileonly,null::*
  *                   -XX:-SegmentedCodeCache -Xmixed
@@ -44,12 +44,33 @@
  *                   compiler.codecache.OverflowCodeCacheTest
  */
 
+/*
+ * @test OverflowCodeCacheTest
+ * @bug 8059550 8279356 8326205
+ * @requires vm.compiler2.enabled
+ * @summary testing of code cache segments overflow
+ * @library /test/lib
+ * @modules java.base/jdk.internal.misc
+ *          java.management
+ *
+ * @build jdk.test.whitebox.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
+ * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions
+ *                   -XX:+WhiteBoxAPI -XX:+TieredCompilation -XX:+UnlockExperimentalVMOptions -XX:+HotCodeHeap -XX:HotCodeHeapSize=8M
+ *                   -Xmixed -XX:TieredStopAtLevel=4
+ *                   compiler.codecache.OverflowCodeCacheTest
+ * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions
+ *                   -XX:+WhiteBoxAPI -XX:-TieredCompilation -XX:+UnlockExperimentalVMOptions -XX:+HotCodeHeap -XX:HotCodeHeapSize=8M
+ *                   -Xmixed -XX:TieredStopAtLevel=4
+ *                   compiler.codecache.OverflowCodeCacheTest
+ */
+
 package compiler.codecache;
 
 import jdk.test.lib.Asserts;
-import sun.hotspot.WhiteBox;
-import sun.hotspot.code.BlobType;
-import sun.hotspot.code.CodeBlob;
+import jdk.test.whitebox.WhiteBox;
+import jdk.test.whitebox.code.BlobType;
+import jdk.test.whitebox.code.CodeBlob;
 
 import java.lang.management.MemoryPoolMXBean;
 import java.lang.reflect.Method;
@@ -85,6 +106,7 @@ public class OverflowCodeCacheTest {
         System.out.println("allocating till possible...");
         ArrayList<Long> blobs = new ArrayList<>();
         int compilationActivityMode = -1;
+        CodeCacheConstraints constraints = getCodeCacheConstraints(type);
         // Lock compilation to be able to better control code cache space
         WHITE_BOX.lockCompilation();
         try {
@@ -115,15 +137,15 @@ public class OverflowCodeCacheTest {
             } catch (VirtualMachineError e) {
                 // Expected
             }
+            constraints.check();
             // Free code cache space
             for (Long blob : blobs) {
                 WHITE_BOX.freeCodeBlob(blob);
             }
 
-            // Convert some nmethods to zombie and then free them to re-enable compilation
+            // Let the GC free nmethods and re-enable compilation
             WHITE_BOX.unlockCompilation();
-            WHITE_BOX.forceNMethodSweep();
-            WHITE_BOX.forceNMethodSweep();
+            WHITE_BOX.fullGC();
 
             // Trigger compilation of Helper::method which will hit an assert because
             // adapter creation failed above due to a lack of code cache space.
@@ -144,4 +166,31 @@ public class OverflowCodeCacheTest {
         return bean.getUsage().getMax();
     }
 
+    class CodeCacheConstraints {
+        void check() {}
+    }
+
+    CodeCacheConstraints getCodeCacheConstraints(final BlobType type) {
+        if (Long.valueOf(0).equals(WHITE_BOX.getVMFlag("HotCodeHeapSize"))) {
+            return new CodeCacheConstraints();
+        } else if (BlobType.MethodHot == type) {
+            // NonProfiledHeap is used when HotCodeHeap runs out of space.
+            return new CodeCacheConstraints() {
+                final int nonProfiledCount = WHITE_BOX.getCodeHeapEntries(BlobType.MethodNonProfiled.id).length;
+                @Override
+                void check() {
+                    Asserts.assertLT(nonProfiledCount, WHITE_BOX.getCodeHeapEntries(BlobType.MethodNonProfiled.id).length);
+                }
+            };
+        } else {
+            // HotCodeHeap should not be used when other heap runs out of space.
+            return new CodeCacheConstraints() {
+                final int hotCount = WHITE_BOX.getCodeHeapEntries(BlobType.MethodHot.id).length;
+                @Override
+                void check() {
+                    Asserts.assertEQ(hotCount, WHITE_BOX.getCodeHeapEntries(BlobType.MethodHot.id).length);
+                }
+            };
+        }
+    }
 }

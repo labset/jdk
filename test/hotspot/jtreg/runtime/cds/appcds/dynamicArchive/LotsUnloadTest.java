@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,14 +29,14 @@
  * @requires vm.cds
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds
  *          /test/hotspot/jtreg/runtime/cds/appcds/dynamicArchive/test-classes
- * @build sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
  * @build LotsUnloadApp
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run driver jdk.test.lib.helpers.ClassFileInstaller -jar LotsUnloadApp.jar LotsUnloadApp DefinedAsHiddenKlass
  * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:. LotsUnloadTest
  */
 
-// Note: for https://bugs.openjdk.java.net/browse/JDK-8278602, this test case does NOT
+// Note: for https://bugs.openjdk.org/browse/JDK-8278602, this test case does NOT
 // reliably reproduce the problem. Reproduction requires patching ZGC. Please see
 // the bug report for instructions.
 //
@@ -65,7 +65,7 @@ public class LotsUnloadTest extends DynamicArchiveTestBase {
 
         dump(topArchiveName,
              logging,
-             "-Xmx64m", "-Xms32m",
+             "-Xmx256m", "-Xms32m",
              "-cp", appJar, mainClass)
           .assertNormalExit(output -> {
                 output.shouldHaveExitValue(0);
@@ -73,7 +73,7 @@ public class LotsUnloadTest extends DynamicArchiveTestBase {
 
         run(topArchiveName,
             logging,
-            "-Xmx64m", "-Xms32m",
+            "-Xmx256m", "-Xms32m",
             "-cp", appJar, mainClass)
           .assertNormalExit(output -> {
               output.shouldHaveExitValue(0);

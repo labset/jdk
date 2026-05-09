@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,9 +32,10 @@ import java.util.*;
 public class InputBlock {
 
     private List<InputNode> nodes;
-    private String name;
-    private InputGraph graph;
-    private Set<InputBlock> successors;
+    private final String name;
+    private final InputGraph graph;
+    private final Set<InputBlock> successors;
+    private Set<Integer> liveOut;
     private boolean artificial;
 
     @Override
@@ -49,7 +50,7 @@ public class InputBlock {
             return true;
         }
 
-        if (o == null || (!(o instanceof InputBlock))) {
+        if ((!(o instanceof InputBlock))) {
             return false;
         }
 
@@ -70,6 +71,15 @@ public class InputBlock {
             }
         }
 
+        if (this.liveOut.size() != b.liveOut.size()) {
+            return false;
+        }
+        for (int liveRangeId : this.liveOut) {
+            if (!b.liveOut.contains(liveRangeId)) {
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -78,6 +88,7 @@ public class InputBlock {
         this.name = name;
         nodes = new ArrayList<>();
         successors = new LinkedHashSet<>(2);
+        liveOut = new HashSet<Integer>(0);
         artificial = false;
     }
 
@@ -99,6 +110,14 @@ public class InputBlock {
         nodes.add(node);
     }
 
+    public void addLiveOut(int liveRangeId) {
+        liveOut.add(liveRangeId);
+    }
+
+    public Set<Integer> getLiveOut() {
+        return Collections.unmodifiableSet(liveOut);
+    }
+
     public Set<InputBlock> getSuccessors() {
         return Collections.unmodifiableSet(successors);
     }
@@ -113,13 +132,11 @@ public class InputBlock {
     }
 
     void addSuccessor(InputBlock b) {
-        if (!successors.contains(b)) {
-            successors.add(b);
-        }
+        successors.add(b);
     }
 
-    void setArtificial(boolean artificial) {
-        this.artificial = artificial;
+    public void setArtificial() {
+        this.artificial = true;
     }
 
     public boolean isArtificial() {

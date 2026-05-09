@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,8 +32,10 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.UnsupportedEncodingException;
 import java.io.Writer;
+import java.net.URL;
 import java.nio.file.Path;
 import java.util.MissingResourceException;
+import java.util.function.UnaryOperator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -50,6 +52,12 @@ import jdk.javadoc.internal.doclets.toolkit.Resources;
  * (e.g. via a path on the command line) or relative to a Location.
  */
 public abstract class DocFile {
+
+    /**
+     * The line separator for the current platform.
+     * Use this when writing to external files.
+     */
+    public static final String PLATFORM_LINE_SEPARATOR = System.getProperty("line.separator");
 
     /** Create a DocFile for a directory. */
     public static DocFile createFileForDirectory(BaseConfiguration configuration, String file) {
@@ -170,8 +178,8 @@ public abstract class DocFile {
     /**
      * Copy the contents of a resource file to this file.
      *
-     * @param resource the path of the resource, relative to the package of this class
-     * @param overwrite whether or not to overwrite the file if it already exists
+     * @param resource the path of the resource
+     * @param url the URL of the resource
      * @param replaceNewLine if false, the file is copied as a binary file;
      *     if true, the file is written line by line, using the platform line
      *     separator
@@ -179,42 +187,57 @@ public abstract class DocFile {
      * @throws DocFileIOException if there is a problem while writing the copy
      * @throws ResourceIOException if there is a problem while reading the resource
      */
-    public void copyResource(DocPath resource, boolean overwrite, boolean replaceNewLine)
+    public void copyResource(DocPath resource, URL url, boolean replaceNewLine)
             throws DocFileIOException, ResourceIOException {
-        if (exists() && !overwrite)
-            return;
-
-        copyResource(resource, replaceNewLine, null);
+        copyResource(resource, url, replaceNewLine, UnaryOperator.identity());
     }
 
     /**
      * Copy the contents of a resource file to this file.
      *
-     * @param resource the path of the resource, relative to the package of this class
+     * @param resource the path of the resource
+     * @param url the URL of the resource
      * @param resources if not {@code null}, substitute occurrences of {@code ##REPLACE:key##}
      *
      * @throws DocFileIOException if there is a problem while writing the copy
      * @throws ResourceIOException if there is a problem while reading the resource
      */
-    public void copyResource(DocPath resource, Resources resources) throws DocFileIOException, ResourceIOException {
-        copyResource(resource, true, resources);
+    public void copyResource(DocPath resource, URL url, Resources resources) throws DocFileIOException, ResourceIOException {
+        copyResource(resource, url, resources == null ? UnaryOperator.identity() : line -> localize(line, resources));
     }
 
-    private void copyResource(DocPath resource, boolean replaceNewLine, Resources resources)
-                throws DocFileIOException, ResourceIOException {
-        try {
-            InputStream in = BaseConfiguration.class.getResourceAsStream(resource.getPath());
-            if (in == null)
-                return;
+    /**
+     * Copy the contents of a resource file to this file while transforming and filtering its lines.
+     *
+     * @param resource the path of the resource
+     * @param url the URL of the resource
+     * @param lineTransformer the transforming function that is called for each line; may return
+     * {@code null} to remove a line.
+     *
+     * @throws DocFileIOException if there is a problem while writing the copy
+     * @throws ResourceIOException if there is a problem while reading the resource
+     */
+    public void copyResource(DocPath resource, URL url, UnaryOperator<String> lineTransformer)
+            throws DocFileIOException, ResourceIOException {
+        copyResource(resource, url, true, lineTransformer);
+    }
 
-            try {
+    private void copyResource(DocPath resource, URL url, boolean replaceNewLine, UnaryOperator<String> lineTransformer)
+            throws ResourceIOException, DocFileIOException {
+        try {
+            InputStream in = url.openStream();
+
+            try (in) {
                 if (replaceNewLine) {
                     try (BufferedReader reader = new BufferedReader(new InputStreamReader(in))) {
                         try (Writer writer = openWriter()) {
                             String line;
                             while ((line = readResourceLine(resource, reader)) != null) {
-                                write(this, writer, resources == null ? line : localize(line, resources));
-                                write(this, writer, DocletConstants.NL);
+                                String transformedLine = lineTransformer.apply(line);
+                                if (transformedLine != null) {
+                                    write(this, writer, transformedLine);
+                                    write(this, writer, PLATFORM_LINE_SEPARATOR);
+                                }
                             }
                         } catch (IOException e) {
                             throw new DocFileIOException(this, DocFileIOException.Mode.WRITE, e);
@@ -231,8 +254,6 @@ public abstract class DocFile {
                         throw new DocFileIOException(this, DocFileIOException.Mode.WRITE, e);
                     }
                 }
-            } finally {
-                in.close();
             }
         } catch (IOException e) {
             throw new ResourceIOException(resource, e);

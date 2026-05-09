@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -57,31 +57,38 @@ class JfrCheckpointManager : public JfrCHeapObj {
  public:
   typedef JfrCheckpointMspace::Node Buffer;
   typedef JfrCheckpointMspace::NodePtr BufferPtr;
+  typedef const JfrCheckpointMspace::Node* ConstBufferPtr;
  private:
   JfrCheckpointMspace* _global_mspace;
   JfrThreadLocalCheckpointMspace* _thread_local_mspace;
-  JfrChunkWriter& _chunkwriter;
+  JfrThreadLocalCheckpointMspace* _virtual_thread_local_mspace;
+  JfrChunkWriter* _chunkwriter;
 
-  JfrCheckpointManager(JfrChunkWriter& cw);
+  JfrCheckpointManager();
   ~JfrCheckpointManager();
   static JfrCheckpointManager& instance();
-  static JfrCheckpointManager* create(JfrChunkWriter& cw);
-  bool initialize();
+  static JfrCheckpointManager* create();
+  bool initialize_early();
+  bool initialize(JfrChunkWriter* cw);
   static void destroy();
 
-  static BufferPtr get_thread_local(Thread* thread);
-  static void set_thread_local(Thread* thread, BufferPtr buffer);
-  static BufferPtr acquire_thread_local(size_t size, Thread* thread);
+  JfrChunkWriter& chunkwriter();
 
-  static BufferPtr lease(Thread* thread, bool previous_epoch = false, size_t size = 0);
-  static BufferPtr lease(BufferPtr old, Thread* thread, size_t size);
+  static BufferPtr get_virtual_thread_local(Thread* thread);
+  static void set_virtual_thread_local(Thread* thread, BufferPtr buffer);
+  static BufferPtr acquire_virtual_thread_local(Thread* thread, size_t size);
+  static BufferPtr new_virtual_thread_local(Thread* thread, size_t size = 0);
+
   static BufferPtr lease_thread_local(Thread* thread, size_t size = 0);
+  static BufferPtr lease_global(Thread* thread, bool previous_epoch = false, size_t size = 0);
 
+  static BufferPtr acquire(Thread* thread, JfrCheckpointBufferKind kind = JFR_THREADLOCAL, bool previous_epoch = false, size_t size = 0);
+  static BufferPtr renew(ConstBufferPtr old, Thread* thread, size_t size, JfrCheckpointBufferKind kind = JFR_THREADLOCAL);
   static BufferPtr flush(BufferPtr old, size_t used, size_t requested, Thread* thread);
 
   size_t clear();
   size_t write();
-  void notify_threads();
+  void notify_threads(bool clear = false);
 
   size_t write_static_type_set(Thread* thread);
   size_t write_threads(JavaThread* thread);
@@ -89,8 +96,7 @@ class JfrCheckpointManager : public JfrCHeapObj {
   void clear_type_set();
   void write_type_set();
 
-  void begin_epoch_shift();
-  void end_epoch_shift();
+  void shift_epoch();
 
   static void on_unloading_classes();
   void on_rotation();
@@ -99,8 +105,9 @@ class JfrCheckpointManager : public JfrCHeapObj {
   void register_full(BufferPtr buffer, Thread* thread);
 
  public:
-  static JfrBlobHandle create_thread_blob(JavaThread* jt, traceid tid = 0, oop vthread = NULL);
-  static void write_checkpoint(Thread* t, traceid tid = 0, oop vthread = NULL);
+  static JfrBlobHandle create_thread_blob(JavaThread* jt, traceid tid = 0, oop vthread = nullptr);
+  static void write_checkpoint(Thread* t, traceid tid = 0, oop vthread = nullptr);
+  static void write_simplified_vthread_checkpoint(traceid vtid);
   size_t flush_type_set();
 
   friend class Jfr;

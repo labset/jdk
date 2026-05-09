@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,6 +31,7 @@
  *          jdk.internal.jvmstat/sun.jvmstat.monitor
  * @run testng/othervm --add-exports=java.base/jdk.internal.misc=ALL-UNNAMED --add-exports=jdk.internal.jvmstat/sun.jvmstat.monitor=ALL-UNNAMED ClassLoaderStatsTest
  */
+
 
 import org.testng.annotations.Test;
 import org.testng.Assert;
@@ -80,6 +81,7 @@ public class ClassLoaderStatsTest {
         }
 
         OutputAnalyzer output = executor.execute("VM.classloader_stats");
+        output.reportDiagnosticSummary();
         Iterator<String> lines = output.asLines().iterator();
         while (lines.hasNext()) {
             String line = lines.next();
@@ -91,8 +93,20 @@ public class ClassLoaderStatsTest {
                     if (!m.group(1).equals("1")) {
                         Assert.fail("Should have loaded 1 class: " + line);
                     }
-                    checkPositiveInt(m.group(2));
-                    checkPositiveInt(m.group(3));
+
+                    long capacityBytes = Long.parseLong(m.group(2)); // aka "Chunksz"
+                    long usedBytes = Long.parseLong(m.group(3)); // aka "Blocksz"
+
+                    // Minimum expected sizes: initial capacity is governed by the chunk size of the first chunk, which
+                    // depends on the arena growth policy. Since this is a normal class loader, we expect as initial chunk
+                    // size at least 4k.
+                    // Minimum used size is difficult to guess but should be at least 1k.
+                    // Maximum expected sizes: We just assume a reasonable maximum. We only loaded one class, so
+                    // we should not see values > 64k.
+                    long K = 1024;
+                    if (capacityBytes < (K * 4) || usedBytes < K || capacityBytes > (64 * K) || usedBytes > (64 * K)) {
+                        throw new RuntimeException("Sizes seem off. Chunksz: " + capacityBytes + ", Blocksz: " + usedBytes);
+                    }
 
                     String next = lines.next();
                     System.out.println("DummyClassLoader next: " + next);

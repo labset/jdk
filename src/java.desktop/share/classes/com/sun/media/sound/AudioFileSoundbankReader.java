@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -51,9 +51,7 @@ public final class AudioFileSoundbankReader extends SoundbankReader {
         try (AudioInputStream ais = AudioSystem.getAudioInputStream(url)) {
             Soundbank sbk = getSoundbank(ais);
             return sbk;
-        } catch (UnsupportedAudioFileException e) {
-            return null;
-        } catch (IOException e) {
+        } catch (UnsupportedAudioFileException | IOException e) {
             return null;
         }
     }
@@ -67,8 +65,7 @@ public final class AudioFileSoundbankReader extends SoundbankReader {
             Soundbank sbk = getSoundbank(ais);
             if (sbk != null)
                 return sbk;
-        } catch (UnsupportedAudioFileException e) {
-        } catch (IOException e) {
+        } catch (UnsupportedAudioFileException | IOException e) {
         }
         stream.reset();
         return null;
@@ -91,6 +88,13 @@ public final class AudioFileSoundbankReader extends SoundbankReader {
             if (totalSize >= Integer.MAX_VALUE - 2) {
                 throw new InvalidMidiDataException(
                         "Can not allocate enough memory to read audio data.");
+            }
+
+            long maximumHeapSize = (long) ((Runtime.getRuntime().maxMemory() -
+                    (Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory())) * 0.9);
+            if (totalSize > maximumHeapSize) {
+                throw new InvalidMidiDataException(
+                        "Insufficient heap size to render audio data.");
             }
 
             if (ais.getFrameLength() == -1 || totalSize > MEGABYTE) {
@@ -136,9 +140,7 @@ public final class AudioFileSoundbankReader extends SoundbankReader {
             ins.add(performer);
             sbk.addInstrument(ins);
             return sbk;
-        } catch (UnsupportedAudioFileException e1) {
-            return null;
-        } catch (IOException e) {
+        } catch (UnsupportedAudioFileException | IOException e) {
             return null;
         }
     }

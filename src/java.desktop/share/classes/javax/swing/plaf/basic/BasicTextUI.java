@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -41,7 +41,6 @@ import javax.swing.border.Border;
 import javax.swing.plaf.UIResource;
 import javax.swing.plaf.synth.SynthUI;
 import sun.swing.DefaultLookup;
-import sun.awt.AppContext;
 import sun.swing.SwingUtilities2;
 
 import javax.swing.plaf.basic.DragRecognitionSupport.BeforeDrag;
@@ -647,6 +646,22 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
                 TransferHandler.getCopyAction());
         map.put(TransferHandler.getPasteAction().getValue(Action.NAME),
                 TransferHandler.getPasteAction());
+
+        if (getComponent() instanceof JPasswordField) {
+            // Edit the action map for Password Field.  This map provides
+            // same actions for double mouse click and
+            // and for triple mouse click (see bugs 4231444, 8354646).
+
+            if (map.get(DefaultEditorKit.selectWordAction) != null) {
+                map.remove(DefaultEditorKit.selectWordAction);
+
+                Action a = map.get(DefaultEditorKit.selectLineAction);
+                if (a != null) {
+                    map.put(DefaultEditorKit.selectWordAction, a);
+                }
+            }
+        }
+
         return map;
     }
 
@@ -943,7 +958,7 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
                 rootView.setSize(d.width - i.left - i.right -
                         caretMargin, d.height - i.top - i.bottom);
             } else if (d.width == 0 && d.height == 0) {
-                // Probably haven't been layed out yet, force some sort of
+                // Probably haven't been laid out yet, force some sort of
                 // initial sizing.
                 rootView.setSize(Integer.MAX_VALUE, Integer.MAX_VALUE);
             }
@@ -1013,14 +1028,17 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
 
 
     /**
-     * Gets the allocation to give the root View.  Due
-     * to an unfortunate set of historical events this
-     * method is inappropriately named.  The Rectangle
-     * returned has nothing to do with visibility.
+     * Gets the allocation (that is the allocated size) for the root view.
+     * <p>
+     * The returned rectangle is unrelated to visibility.
+     * It is used to set the size of the root view.
+     * <p>
      * The component must have a non-zero positive size for
      * this translation to be computed.
      *
      * @return the bounding box for the root view
+     * @see View#paint
+     * @see View#setSize
      */
     protected Rectangle getVisibleEditorRect() {
         Rectangle alloc = editor.getBounds();
@@ -2215,24 +2233,19 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
         }
     }
 
+    private static volatile DragListener dragListenerSingleton;
+
     private static DragListener getDragListener() {
         synchronized(DragListener.class) {
-            DragListener listener =
-                (DragListener)AppContext.getAppContext().
-                    get(DragListener.class);
-
-            if (listener == null) {
-                listener = new DragListener();
-                AppContext.getAppContext().put(DragListener.class, listener);
+            if (dragListenerSingleton == null) {
+                dragListenerSingleton = new DragListener();
             }
-
-            return listener;
+            return dragListenerSingleton;
         }
     }
 
     /**
      * Listens for mouse events for the purposes of detecting drag gestures.
-     * BasicTextUI will maintain one of these per AppContext.
      */
     static class DragListener extends MouseInputAdapter
                               implements BeforeDrag {
@@ -2480,7 +2493,7 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
          * not mutable, so a transfer operation of COPY only should
          * be advertised in that case.
          *
-         * @param c  The component holding the data to be transfered.  This
+         * @param c  The component holding the data to be transferred.  This
          *  argument is provided to enable sharing of TransferHandlers by
          *  multiple components.
          * @return  This is implemented to return NONE if the component is a JPasswordField
@@ -2500,10 +2513,10 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
         /**
          * Create a Transferable to use as the source for a data transfer.
          *
-         * @param comp  The component holding the data to be transfered.  This
+         * @param comp  The component holding the data to be transferred.  This
          *  argument is provided to enable sharing of TransferHandlers by
          *  multiple components.
-         * @return  The representation of the data to be transfered.
+         * @return  The representation of the data to be transferred.
          *
          */
         protected Transferable createTransferable(JComponent comp) {
@@ -2516,7 +2529,7 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
 
         /**
          * This method is called after data has been exported.  This method should remove
-         * the data that was transfered if the action was MOVE.
+         * the data that was transferred if the action was MOVE.
          *
          * @param source The component that was the source of the data.
          * @param data   The data that was transferred or possibly null
@@ -2598,18 +2611,21 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
                     if (ic != null) {
                         ic.endComposition();
                     }
-                    Reader r = importFlavor.getReaderForText(t);
 
-                    if (modeBetween) {
-                        Caret caret = c.getCaret();
-                        if (caret instanceof DefaultCaret) {
-                            ((DefaultCaret)caret).setDot(pos, dropBias);
-                        } else {
-                            c.setCaretPosition(pos);
+                    // Use try-with-resource logic to close stream after use
+                    try (Reader r = importFlavor.getReaderForText(t)) {
+
+                        if (modeBetween) {
+                            Caret caret = c.getCaret();
+                            if (caret instanceof DefaultCaret) {
+                                ((DefaultCaret) caret).setDot(pos, dropBias);
+                            } else {
+                                c.setCaretPosition(pos);
+                            }
                         }
-                    }
 
-                    handleReaderImport(r, c, useRead);
+                        handleReaderImport(r, c, useRead);
+                    }
 
                     if (isDrop) {
                         c.requestFocus();
@@ -2626,9 +2642,7 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
                     }
 
                     imported = true;
-                } catch (UnsupportedFlavorException ufe) {
-                } catch (BadLocationException ble) {
-                } catch (IOException ioe) {
+                } catch (UnsupportedFlavorException | IOException | BadLocationException ex) {
                 }
             }
             return imported;
@@ -2694,8 +2708,7 @@ public abstract class BasicTextUI extends TextUI implements ViewFactory {
                             richText = sw.toString();
                         }
                     }
-                } catch (BadLocationException ble) {
-                } catch (IOException ioe) {
+                } catch (BadLocationException | IOException ex) {
                 }
             }
 

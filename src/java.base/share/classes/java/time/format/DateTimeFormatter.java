@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -760,6 +760,8 @@ public final class DateTimeFormatter {
      * @param requestedTemplate the requested template, not null
      * @return the formatter based on the {@code requestedTemplate} pattern, not null
      * @throws IllegalArgumentException if {@code requestedTemplate} is invalid
+     *
+     * @spec https://www.unicode.org/reports/tr35 Unicode Locale Data Markup Language (LDML)
      * @see #ofPattern(String)
      * @since 19
      */
@@ -780,10 +782,10 @@ public final class DateTimeFormatter {
      * <li>Four digits or more for the {@link ChronoField#YEAR year}.
      * Years in the range 0000 to 9999 will be pre-padded by zero to ensure four digits.
      * Years outside that range will have a prefixed positive or negative symbol.
-     * <li>A dash
+     * <li>A hyphen ('HYPHEN-MINUS', U+002D)
      * <li>Two digits for the {@link ChronoField#MONTH_OF_YEAR month-of-year}.
      *  This is pre-padded by zero to ensure two digits.
-     * <li>A dash
+     * <li>A hyphen ('HYPHEN-MINUS', U+002D)
      * <li>Two digits for the {@link ChronoField#DAY_OF_MONTH day-of-month}.
      *  This is pre-padded by zero to ensure two digits.
      * </ul>
@@ -815,6 +817,7 @@ public final class DateTimeFormatter {
      * <li>The {@link #ISO_LOCAL_DATE}
      * <li>The {@link ZoneOffset#getId() offset ID}. If the offset has seconds then
      *  they will be handled even though this is not part of the ISO-8601 standard.
+     *  The offset parsing is lenient, which allows the minutes and seconds to be optional.
      *  Parsing is case insensitive.
      * </ul>
      * <p>
@@ -827,7 +830,9 @@ public final class DateTimeFormatter {
         ISO_OFFSET_DATE = new DateTimeFormatterBuilder()
                 .parseCaseInsensitive()
                 .append(ISO_LOCAL_DATE)
+                .parseLenient()
                 .appendOffsetId()
+                .parseStrict()
                 .toFormatter(ResolverStyle.STRICT, IsoChronology.INSTANCE);
     }
 
@@ -844,6 +849,7 @@ public final class DateTimeFormatter {
      * <li>If the offset is not available then the format is complete.
      * <li>The {@link ZoneOffset#getId() offset ID}. If the offset has seconds then
      *  they will be handled even though this is not part of the ISO-8601 standard.
+     *  The offset parsing is lenient, which allows the minutes and seconds to be optional.
      *  Parsing is case insensitive.
      * </ul>
      * <p>
@@ -860,7 +866,9 @@ public final class DateTimeFormatter {
                 .parseCaseInsensitive()
                 .append(ISO_LOCAL_DATE)
                 .optionalStart()
+                .parseLenient()
                 .appendOffsetId()
+                .parseStrict()
                 .toFormatter(ResolverStyle.STRICT, IsoChronology.INSTANCE);
     }
 
@@ -917,6 +925,7 @@ public final class DateTimeFormatter {
      * <li>The {@link #ISO_LOCAL_TIME}
      * <li>The {@link ZoneOffset#getId() offset ID}. If the offset has seconds then
      *  they will be handled even though this is not part of the ISO-8601 standard.
+     *  The offset parsing is lenient, which allows the minutes and seconds to be optional.
      *  Parsing is case insensitive.
      * </ul>
      * <p>
@@ -928,7 +937,9 @@ public final class DateTimeFormatter {
         ISO_OFFSET_TIME = new DateTimeFormatterBuilder()
                 .parseCaseInsensitive()
                 .append(ISO_LOCAL_TIME)
+                .parseLenient()
                 .appendOffsetId()
+                .parseStrict()
                 .toFormatter(ResolverStyle.STRICT, null);
     }
 
@@ -945,6 +956,7 @@ public final class DateTimeFormatter {
      * <li>If the offset is not available then the format is complete.
      * <li>The {@link ZoneOffset#getId() offset ID}. If the offset has seconds then
      *  they will be handled even though this is not part of the ISO-8601 standard.
+     *  The offset parsing is lenient, which allows the minutes and seconds to be optional.
      *  Parsing is case insensitive.
      * </ul>
      * <p>
@@ -960,7 +972,9 @@ public final class DateTimeFormatter {
                 .parseCaseInsensitive()
                 .append(ISO_LOCAL_TIME)
                 .optionalStart()
+                .parseLenient()
                 .appendOffsetId()
+                .parseStrict()
                 .toFormatter(ResolverStyle.STRICT, null);
     }
 
@@ -1073,6 +1087,7 @@ public final class DateTimeFormatter {
      * <li>If the offset is not available to format or parse then the format is complete.
      * <li>The {@link ZoneOffset#getId() offset ID}. If the offset has seconds then
      *  they will be handled even though this is not part of the ISO-8601 standard.
+     *  The offset parsing is lenient, which allows the minutes and seconds to be optional.
      * <li>If the zone ID is not available or is a {@code ZoneOffset} then the format is complete.
      * <li>An open square bracket '['.
      * <li>The {@link ZoneId#getId() zone ID}. This is not part of the ISO-8601 standard.
@@ -1092,7 +1107,9 @@ public final class DateTimeFormatter {
         ISO_DATE_TIME = new DateTimeFormatterBuilder()
                 .append(ISO_LOCAL_DATE_TIME)
                 .optionalStart()
+                .parseLenient()
                 .appendOffsetId()
+                .parseStrict()
                 .optionalStart()
                 .appendLiteral('[')
                 .parseCaseSensitive()
@@ -1113,12 +1130,13 @@ public final class DateTimeFormatter {
      * <li>Four digits or more for the {@link ChronoField#YEAR year}.
      * Years in the range 0000 to 9999 will be pre-padded by zero to ensure four digits.
      * Years outside that range will have a prefixed positive or negative symbol.
-     * <li>A dash
+     * <li>A hyphen ('HYPHEN-MINUS', U+002D)
      * <li>Three digits for the {@link ChronoField#DAY_OF_YEAR day-of-year}.
      *  This is pre-padded by zero to ensure three digits.
      * <li>If the offset is not available to format or parse then the format is complete.
      * <li>The {@link ZoneOffset#getId() offset ID}. If the offset has seconds then
      *  they will be handled even though this is not part of the ISO-8601 standard.
+     *  The offset parsing is lenient, which allows the minutes and seconds to be optional.
      *  Parsing is case insensitive.
      * </ul>
      * <p>
@@ -1137,7 +1155,9 @@ public final class DateTimeFormatter {
                 .appendLiteral('-')
                 .appendValue(DAY_OF_YEAR, 3)
                 .optionalStart()
+                .parseLenient()
                 .appendOffsetId()
+                .parseStrict()
                 .toFormatter(ResolverStyle.STRICT, IsoChronology.INSTANCE);
     }
 
@@ -1153,16 +1173,17 @@ public final class DateTimeFormatter {
      * <li>Four digits or more for the {@link IsoFields#WEEK_BASED_YEAR week-based-year}.
      * Years in the range 0000 to 9999 will be pre-padded by zero to ensure four digits.
      * Years outside that range will have a prefixed positive or negative symbol.
-     * <li>A dash
+     * <li>A hyphen ('HYPHEN-MINUS', U+002D)
      * <li>The letter 'W'. Parsing is case insensitive.
      * <li>Two digits for the {@link IsoFields#WEEK_OF_WEEK_BASED_YEAR week-of-week-based-year}.
      *  This is pre-padded by zero to ensure three digits.
-     * <li>A dash
+     * <li>A hyphen ('HYPHEN-MINUS', U+002D)
      * <li>One digit for the {@link ChronoField#DAY_OF_WEEK day-of-week}.
      *  The value run from Monday (1) to Sunday (7).
      * <li>If the offset is not available to format or parse then the format is complete.
      * <li>The {@link ZoneOffset#getId() offset ID}. If the offset has seconds then
      *  they will be handled even though this is not part of the ISO-8601 standard.
+     *  The offset parsing is lenient, which allows the minutes and seconds to be optional.
      *  Parsing is case insensitive.
      * </ul>
      * <p>
@@ -1183,7 +1204,9 @@ public final class DateTimeFormatter {
                 .appendLiteral('-')
                 .appendValue(DAY_OF_WEEK, 1)
                 .optionalStart()
+                .parseLenient()
                 .appendOffsetId()
+                .parseStrict()
                 .toFormatter(ResolverStyle.STRICT, IsoChronology.INSTANCE);
     }
 
@@ -1197,8 +1220,10 @@ public final class DateTimeFormatter {
      * When formatting, the instant will always be suffixed by 'Z' to indicate UTC.
      * The second-of-minute is always output.
      * The nano-of-second outputs zero, three, six or nine digits as necessary.
-     * When parsing, the behaviour of {@link DateTimeFormatterBuilder#appendOffsetId()}
-     * will be used to parse the offset, converting the instant to UTC as necessary.
+     * When parsing, the lenient mode behavior of
+     * {@link DateTimeFormatterBuilder#appendOffset(String, String)
+     * appendOffset("+HH", "Z")} will be used to parse the offset,
+     * converting the instant to UTC as necessary.
      * The time to at least the seconds field is required.
      * Fractional seconds from zero to nine are parsed.
      * The localized decimal style is not used.
@@ -1504,9 +1529,9 @@ public final class DateTimeFormatter {
      * localization, such as the text or localized pattern.
      * <p>
      * The locale is stored as passed in, without further processing.
-     * If the locale has <a href="../../util/Locale.html#def_locale_extension">
-     * Unicode extensions</a>, they may be used later in text
-     * processing. To set the chronology, time-zone and decimal style from
+     * If the locale has {@linkplain Locale##def_locale_extension Unicode extensions},
+     * they may be used later in text processing.
+     * To set the chronology, time-zone and decimal style from
      * unicode extensions, see {@link #localizedBy localizedBy()}.
      * <p>
      * This instance is immutable and unaffected by this method call.
@@ -1531,7 +1556,7 @@ public final class DateTimeFormatter {
      * localization, such as the text or localized pattern. If the locale contains the
      * "ca" (calendar), "nu" (numbering system), "rg" (region override), and/or
      * "tz" (timezone)
-     * <a href="../../util/Locale.html#def_locale_extension">Unicode extensions</a>,
+     * {@linkplain Locale##def_locale_extension Unicode extensions},
      * the chronology, numbering system and/or the zone are overridden. If both "ca"
      * and "rg" are specified, the chronology from the "ca" extension supersedes the
      * implicit one from the "rg" extension. Same is true for the "nu" extension.
@@ -1900,11 +1925,11 @@ public final class DateTimeFormatter {
         try {
             DateTimePrintContext context = new DateTimePrintContext(temporal, this);
             if (appendable instanceof StringBuilder) {
-                printerParser.format(context, (StringBuilder) appendable);
+                printerParser.format(context, (StringBuilder) appendable, false);
             } else {
                 // buffer output to avoid writing to appendable in case of error
                 StringBuilder buf = new StringBuilder(32);
-                printerParser.format(context, buf);
+                printerParser.format(context, buf, false);
                 appendable.append(buf);
             }
         } catch (IOException ex) {
@@ -2294,29 +2319,23 @@ public final class DateTimeFormatter {
             DateTimeParseContext context;
             try {
                 context = formatter.parseUnresolved0(text, pos);
-            } catch (IndexOutOfBoundsException ex) {
-                if (pos.getErrorIndex() < 0) {
-                    pos.setErrorIndex(0);
+                if (context == null) {
+                    if (pos.getErrorIndex() < 0) {
+                        pos.setErrorIndex(0);
+                    }
+                    return null;
                 }
-                return null;
-            }
-            if (context == null) {
-                if (pos.getErrorIndex() < 0) {
-                    pos.setErrorIndex(0);
-                }
-                return null;
-            }
-            try {
                 TemporalAccessor resolved = context.toResolved(formatter.resolverStyle, formatter.resolverFields);
                 if (parseType == null) {
                     return resolved;
                 }
                 return resolved.query(parseType);
             } catch (RuntimeException ex) {
-                pos.setErrorIndex(0);
+                if (pos.getErrorIndex() < 0) {
+                    pos.setErrorIndex(0);
+                }
                 return null;
             }
         }
     }
-
 }

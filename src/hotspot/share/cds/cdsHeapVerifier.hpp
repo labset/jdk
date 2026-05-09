@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,13 +22,14 @@
  *
  */
 
-#ifndef SHARED_CDS_CDSHEAPVERIFIER_HPP
-#define SHARED_CDS_CDSHEAPVERIFIER_HPP
+#ifndef SHARE_CDS_CDSHEAPVERIFIER_HPP
+#define SHARE_CDS_CDSHEAPVERIFIER_HPP
 
 #include "cds/heapShared.hpp"
 #include "memory/iterator.hpp"
+#include "oops/oopHandle.hpp"
 #include "utilities/growableArray.hpp"
-#include "utilities/resourceHash.hpp"
+#include "utilities/hashTable.hpp"
 
 class InstanceKlass;
 class Symbol;
@@ -37,9 +38,10 @@ class Symbol;
 
 class CDSHeapVerifier : public KlassClosure {
   class CheckStaticFields;
+  class SharedSecretsAccessorFinder;
   class TraceFields;
 
-  int _archived_objs;
+  size_t _archived_objs;
   int _problems;
 
   struct StaticFieldInfo {
@@ -47,13 +49,14 @@ class CDSHeapVerifier : public KlassClosure {
     Symbol* _name;
   };
 
-  ResourceHashtable<oop, StaticFieldInfo,
+  HashTable<oop, StaticFieldInfo,
       15889, // prime number
-      ResourceObj::C_HEAP,
+      AnyObj::C_HEAP,
       mtClassShared,
-      HeapShared::oop_hash> _table;
+      HeapShared::oop_address_hash> _table;
 
   GrowableArray<const char**> _exclusions;
+  GrowableArray<oop> _shared_secret_accessors;
 
   void add_exclusion(const char** excl) {
     _exclusions.append(excl);
@@ -67,9 +70,25 @@ class CDSHeapVerifier : public KlassClosure {
         return &excl[1];
       }
     }
-    return NULL;
+    return nullptr;
   }
-  int trace_to_root(oop orig_obj, oop orig_field, HeapShared::CachedOopInfo* p);
+
+  void add_shared_secret_accessors();
+
+  void add_shared_secret_accessor(oop obj) {
+    _shared_secret_accessors.append(obj);
+  }
+
+  bool is_shared_secret_accessor(oop obj) {
+    for (int i = 0; i < _shared_secret_accessors.length(); i++) {
+      if (_shared_secret_accessors.at(i) == obj) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static int trace_to_root(outputStream* st, oop orig_obj, oop orig_field, HeapShared::CachedOopInfo* p);
 
   CDSHeapVerifier();
   ~CDSHeapVerifier();
@@ -79,11 +98,13 @@ public:
   // Overrides KlassClosure::do_klass()
   virtual void do_klass(Klass* k);
 
-  // For ResourceHashtable::iterate()
-  inline bool do_entry(oop& orig_obj, HeapShared::CachedOopInfo& value);
+  // For HashTable::iterate()
+  inline bool do_entry(OopHandle& orig_obj, HeapShared::CachedOopInfo& value);
 
-  static void verify() NOT_DEBUG_RETURN;
+  static void verify();
+
+  static void trace_to_root(outputStream* st, oop orig_obj);
 };
 
 #endif // INCLUDE_CDS_JAVA_HEAP
-#endif // SHARED_CDS_CDSHEAPVERIFIER_HPP
+#endif // SHARE_CDS_CDSHEAPVERIFIER_HPP

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1994, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1994, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,15 +30,16 @@ import java.lang.constant.Constable;
 import java.lang.constant.ConstantDesc;
 import java.util.Optional;
 
+import jdk.internal.math.FloatConsts;
 import jdk.internal.math.FloatingDecimal;
 import jdk.internal.math.FloatToDecimal;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
 
 /**
- * The {@code Float} class wraps a value of primitive type
- * {@code float} in an object. An object of type
- * {@code Float} contains a single field whose type is
- * {@code float}.
+ * The {@code Float} class is the {@linkplain
+ * java.lang##wrapperClass wrapper class} for values of the primitive
+ * type {@code float}. An object of type {@code Float} contains a
+ * single field whose type is {@code float}.
  *
  * <p>In addition, this class provides several methods for converting a
  * {@code float} to a {@code String} and a
@@ -55,17 +56,20 @@ import jdk.internal.vm.annotation.IntrinsicCandidate;
  * <h2><a id=equivalenceRelation>Floating-point Equality, Equivalence,
  * and Comparison</a></h2>
  *
- * The class {@code java.lang.Double} has a <a
- * href="Double.html#equivalenceRelation">discussion of equality,
- * equivalence, and comparison of floating-point values</a> that is
+ * The class {@code java.lang.Double} has a {@linkplain
+ * Double##equivalenceRelation discussion of equality,
+ * equivalence, and comparison of floating-point values} that is
  * equally applicable to {@code float} values.
  *
- * @see <a href="https://standards.ieee.org/ieee/754/6210/">
- *      <cite>IEEE Standard for Floating-Point Arithmetic</cite></a>
+ * <h2><a id=decimalToBinaryConversion>Decimal &harr; Binary Conversion Issues</a></h2>
  *
- * @author  Lee Boynton
- * @author  Arthur van Hoff
- * @author  Joseph D. Darcy
+ * The {@linkplain Double##decimalToBinaryConversion discussion of binary to
+ * decimal conversion issues} in {@code java.lang.Double} is also
+ * applicable to {@code float} values.
+ *
+ * @spec https://standards.ieee.org/ieee/754/6210/
+ *       IEEE Standard for Floating-Point Arithmetic
+ *
  * @since 1.0
  */
 @jdk.internal.ValueBased
@@ -86,9 +90,9 @@ public final class Float extends Number
     public static final float NEGATIVE_INFINITY = -1.0f / 0.0f;
 
     /**
-     * A constant holding a Not-a-Number (NaN) value of type
-     * {@code float}.  It is equivalent to the value returned by
-     * {@code Float.intBitsToFloat(0x7fc00000)}.
+     * A constant holding a Not-a-Number (NaN) value of type {@code float}.
+     * It is {@linkplain Double##equivalenceRelation equivalent}
+     * to the value returned by{@code Float.intBitsToFloat(0x7fc00000)}.
      */
     public static final float NaN = 0.0f / 0.0f;
 
@@ -120,15 +124,16 @@ public final class Float extends Number
     public static final float MIN_VALUE = 0x0.000002P-126f; // 1.4e-45f
 
     /**
-     * The number of bits used to represent a {@code float} value.
+     * The number of bits used to represent a {@code float} value,
+     * {@value}.
      *
      * @since 1.5
      */
     public static final int SIZE = 32;
 
     /**
-     * The number of bits in the significand of a {@code float} value.
-     * This is the parameter N in section {@jls 4.2.3} of
+     * The number of bits in the significand of a {@code float} value,
+     * {@value}.  This is the parameter N in section {@jls 4.2.3} of
      * <cite>The Java Language Specification</cite>.
      *
      * @since 19
@@ -136,8 +141,8 @@ public final class Float extends Number
     public static final int PRECISION = 24;
 
     /**
-     * Maximum exponent a finite {@code float} variable may have.  It
-     * is equal to the value returned by {@code
+     * Maximum exponent a finite {@code float} variable may have,
+     * {@value}.  It is equal to the value returned by {@code
      * Math.getExponent(Float.MAX_VALUE)}.
      *
      * @since 1.6
@@ -145,8 +150,8 @@ public final class Float extends Number
     public static final int MAX_EXPONENT = (1 << (SIZE - PRECISION - 1)) - 1; // 127
 
     /**
-     * Minimum exponent a normalized {@code float} variable may have.
-     * It is equal to the value returned by {@code
+     * Minimum exponent a normalized {@code float} variable may have,
+     * {@value}.  It is equal to the value returned by {@code
      * Math.getExponent(Float.MIN_NORMAL)}.
      *
      * @since 1.6
@@ -154,7 +159,8 @@ public final class Float extends Number
     public static final int MIN_EXPONENT = 1 - MAX_EXPONENT; // -126
 
     /**
-     * The number of bytes used to represent a {@code float} value.
+     * The number of bytes used to represent a {@code float} value,
+     * {@value}.
      *
      * @since 1.8
      */
@@ -166,8 +172,7 @@ public final class Float extends Number
      *
      * @since 1.1
      */
-    @SuppressWarnings("unchecked")
-    public static final Class<Float> TYPE = (Class<Float>) Class.getPrimitiveClass("float");
+    public static final Class<Float> TYPE = Class.getPrimitiveClass("float");
 
     /**
      * Returns a string representation of the {@code float}
@@ -298,6 +303,23 @@ public final class Float extends Number
      * <p>To create localized string representations of a floating-point
      * value, use subclasses of {@link java.text.NumberFormat}.
      *
+     * @apiNote
+     * This method corresponds to the general functionality of the
+     * convertToDecimalCharacter operation defined in IEEE 754;
+     * however, that operation is defined in terms of specifying the
+     * number of significand digits used in the conversion.
+     * Code to do such a conversion in the Java platform includes
+     * converting the {@code float} to a {@link java.math.BigDecimal
+     * BigDecimal} exactly and then rounding the {@code BigDecimal} to
+     * the desired number of digits; sample code:
+     * {@snippet lang=java :
+     * floatf = 0.1f;
+     * int digits = 15;
+     * BigDecimal bd = new BigDecimal(f);
+     * String result = bd.round(new MathContext(digits,  RoundingMode.HALF_UP));
+     * // 0.100000001490116
+     * }
+     *
      * @param   f   the {@code float} to be converted.
      * @return a string representation of the argument.
      */
@@ -378,10 +400,14 @@ public final class Float extends Number
      *     <td>{@code 0x0.000002p-126}</td>
      * </tbody>
      * </table>
+     *
+     * @apiNote
+     * This method corresponds to the convertToHexCharacter operation
+     * defined in IEEE 754.
+     *
      * @param   f   the {@code float} to be converted.
      * @return a hex string representation of the argument.
      * @since 1.5
-     * @author Joseph D. Darcy
      */
     public static String toHexString(float f) {
         if (Math.abs(f) < Float.MIN_NORMAL
@@ -390,10 +416,12 @@ public final class Float extends Number
             // replace subnormal double exponent with subnormal float
             // exponent
             String s = Double.toHexString(Math.scalb((double)f,
-                                                     /* -1022+126 */
-                                                     Double.MIN_EXPONENT-
+                                                     // -1022 + 126
+                                                     Double.MIN_EXPONENT -
                                                      Float.MIN_EXPONENT));
-            return s.replaceFirst("p-1022$", "p-126");
+            // The char sequence "-1022" can only appear in the
+            // representation of the exponent, not in the (hex) significand.
+            return s.replace("-1022", "-126");
         }
         else // double string will be the same as float string
             return Double.toHexString(f);
@@ -482,10 +510,6 @@ public final class Float extends Number
      * Finally, after rounding a {@code Float} object representing
      * this {@code float} value is returned.
      *
-     * <p>To interpret localized string representations of a
-     * floating-point value, use subclasses of {@link
-     * java.text.NumberFormat}.
-     *
      * <p>Note that trailing format specifiers, specifiers that
      * determine the type of a floating-point literal
      * ({@code 1.0f} is a {@code float} value;
@@ -509,11 +533,26 @@ public final class Float extends Number
      * for {@link Double#valueOf Double.valueOf} lists a regular
      * expression which can be used to screen the input.
      *
+     * @apiNote To interpret localized string representations of a
+     * floating-point value, or string representations that have
+     * non-ASCII digits, use {@link java.text.NumberFormat}. For
+     * example,
+     * {@snippet lang="java" :
+     *     NumberFormat.getInstance(l).parse(s).floatValue();
+     * }
+     * where {@code l} is the desired locale, or
+     * {@link java.util.Locale#ROOT} if locale insensitive.
+     *
+     * @apiNote
+     * This method corresponds to the convertFromDecimalCharacter and
+     * convertFromHexCharacter operations defined in IEEE 754.
+     *
      * @param   s   the string to be parsed.
      * @return  a {@code Float} object holding the value
      *          represented by the {@code String} argument.
      * @throws  NumberFormatException  if the string does not contain a
      *          parsable number.
+     * @see Double##decimalToBinaryConversion Decimal &harr; Binary Conversion Issues
      */
     public static Float valueOf(String s) throws NumberFormatException {
         return new Float(parseFloat(s));
@@ -549,6 +588,7 @@ public final class Float extends Number
      * @throws NumberFormatException if the string does not contain a
      *               parsable {@code float}.
      * @see    java.lang.Float#valueOf(String)
+     * @see    Double##decimalToBinaryConversion Decimal &harr; Binary Conversion Issues
      * @since 1.2
      */
     public static float parseFloat(String s) throws NumberFormatException {
@@ -585,7 +625,7 @@ public final class Float extends Number
      */
     @IntrinsicCandidate
     public static boolean isInfinite(float v) {
-        return (v == POSITIVE_INFINITY) || (v == NEGATIVE_INFINITY);
+        return Math.abs(v) > MAX_VALUE;
     }
 
 
@@ -603,6 +643,7 @@ public final class Float extends Number
      * floating-point value, {@code false} otherwise.
      * @since 1.8
      */
+     @IntrinsicCandidate
      public static boolean isFinite(float f) {
         return Math.abs(f) <= Float.MAX_VALUE;
     }
@@ -625,7 +666,7 @@ public final class Float extends Number
      * {@link #valueOf(float)} is generally a better choice, as it is
      * likely to yield significantly better space and time performance.
      */
-    @Deprecated(since="9", forRemoval = true)
+    @Deprecated(since="9")
     public Float(float value) {
         this.value = value;
     }
@@ -641,7 +682,7 @@ public final class Float extends Number
      * static factory method {@link #valueOf(float)} method as follows:
      * {@code Float.valueOf((float)value)}.
      */
-    @Deprecated(since="9", forRemoval = true)
+    @Deprecated(since="9")
     public Float(double value) {
         this.value = (float)value;
     }
@@ -662,7 +703,7 @@ public final class Float extends Number
      * {@code float} primitive, or use {@link #valueOf(String)}
      * to convert a string to a {@code Float} object.
      */
-    @Deprecated(since="9", forRemoval = true)
+    @Deprecated(since="9")
     public Float(String s) throws NumberFormatException {
         value = parseFloat(s);
     }
@@ -711,6 +752,7 @@ public final class Float extends Number
      *          converted to type {@code byte}
      * @jls 5.1.3 Narrowing Primitive Conversion
      */
+    @Override
     public byte byteValue() {
         return (byte)value;
     }
@@ -724,6 +766,7 @@ public final class Float extends Number
      * @jls 5.1.3 Narrowing Primitive Conversion
      * @since 1.1
      */
+    @Override
     public short shortValue() {
         return (short)value;
     }
@@ -732,10 +775,15 @@ public final class Float extends Number
      * Returns the value of this {@code Float} as an {@code int} after
      * a narrowing primitive conversion.
      *
+     * @apiNote
+     * This method corresponds to the convertToIntegerTowardZero
+     * operation defined in IEEE 754.
+     *
      * @return  the {@code float} value represented by this object
      *          converted to type {@code int}
      * @jls 5.1.3 Narrowing Primitive Conversion
      */
+    @Override
     public int intValue() {
         return (int)value;
     }
@@ -744,10 +792,15 @@ public final class Float extends Number
      * Returns value of this {@code Float} as a {@code long} after a
      * narrowing primitive conversion.
      *
+     * @apiNote
+     * This method corresponds to the convertToIntegerTowardZero
+     * operation defined in IEEE 754.
+     *
      * @return  the {@code float} value represented by this object
      *          converted to type {@code long}
      * @jls 5.1.3 Narrowing Primitive Conversion
      */
+    @Override
     public long longValue() {
         return (long)value;
     }
@@ -757,6 +810,7 @@ public final class Float extends Number
      *
      * @return the {@code float} value represented by this object
      */
+    @Override
     @IntrinsicCandidate
     public float floatValue() {
         return value;
@@ -774,6 +828,7 @@ public final class Float extends Number
      *         object converted to type {@code double}
      * @jls 5.1.2 Widening Primitive Conversion
      */
+    @Override
     public double doubleValue() {
         return (double)value;
     }
@@ -814,6 +869,9 @@ public final class Float extends Number
      * same if and only if the method {@link #floatToIntBits(float)}
      * returns the identical {@code int} value when applied to
      * each.
+     * In other words, {@linkplain Double##repEquivalence
+     * representation equivalence} is used to compare the {@code
+     * float} values.
      *
      * @apiNote
      * This method is defined in terms of {@link
@@ -821,9 +879,8 @@ public final class Float extends Number
      * {@code float} values since the {@code ==} operator does
      * <em>not</em> define an equivalence relation and to satisfy the
      * {@linkplain Object#equals equals contract} an equivalence
-     * relation must be implemented; see <a
-     * href="Double.html#equivalenceRelation">this discussion</a> for
-     * details of floating-point equality and equivalence.
+     * relation must be implemented; see {@linkplain Double##equivalenceRelation
+     * this discussion for details of floating-point equality and equivalence}.
      *
      * @param obj the object to be compared
      * @return  {@code true} if the objects are the same;
@@ -832,8 +889,8 @@ public final class Float extends Number
      * @jls 15.21.1 Numerical Equality Operators == and !=
      */
     public boolean equals(Object obj) {
-        return (obj instanceof Float)
-               && (floatToIntBits(((Float)obj).value) == floatToIntBits(value));
+        return (obj instanceof Float f) &&
+            (floatToIntBits(f.value) == floatToIntBits(value));
     }
 
     /**
@@ -976,6 +1033,198 @@ public final class Float extends Number
     public static native float intBitsToFloat(int bits);
 
     /**
+     * {@return the {@code float} value closest to the numerical value
+     * of the argument, a floating-point binary16 value encoded in a
+     * {@code short}} The conversion is exact; all binary16 values can
+     * be exactly represented in {@code float}.
+     *
+     * Special cases:
+     * <ul>
+     * <li> If the argument is zero, the result is a zero with the
+     * same sign as the argument.
+     * <li> If the argument is infinite, the result is an infinity
+     * with the same sign as the argument.
+     * <li> If the argument is a NaN, the result is a NaN.
+     * </ul>
+     *
+     * <h4><a id=binary16Format>IEEE 754 binary16 format</a></h4>
+     * The IEEE 754 standard defines binary16 as a 16-bit format, along
+     * with the 32-bit binary32 format (corresponding to the {@code
+     * float} type) and the 64-bit binary64 format (corresponding to
+     * the {@code double} type). The binary16 format is similar to the
+     * other IEEE 754 formats, except smaller, having all the usual
+     * IEEE 754 values such as NaN, signed infinities, signed zeros,
+     * and subnormals. The parameters (JLS {@jls 4.2.3}) for the
+     * binary16 format are N = 11 precision bits, K = 5 exponent bits,
+     * <i>E</i><sub><i>max</i></sub> = 15, and
+     * <i>E</i><sub><i>min</i></sub> = -14.
+     *
+     * @apiNote
+     * This method corresponds to the convertFormat operation defined
+     * in IEEE 754 from the binary16 format to the binary32 format.
+     * The operation of this method is analogous to a primitive
+     * widening conversion (JLS {@jls 5.1.2}).
+     *
+     * @param floatBinary16 the binary16 value to convert to {@code float}
+     * @since 20
+     */
+    @IntrinsicCandidate
+    public static float float16ToFloat(short floatBinary16) {
+        /*
+         * The binary16 format has 1 sign bit, 5 exponent bits, and 10
+         * significand bits. The exponent bias is 15.
+         */
+        int bin16arg = (int)floatBinary16;
+        int bin16SignBit     = 0x8000 & bin16arg;
+        int bin16ExpBits     = 0x7c00 & bin16arg;
+        int bin16SignifBits  = 0x03FF & bin16arg;
+
+        // Shift left difference in the number of significand bits in
+        // the float and binary16 formats
+        final int SIGNIF_SHIFT = (FloatConsts.SIGNIFICAND_WIDTH - 11);
+
+        float sign = (bin16SignBit != 0) ? -1.0f : 1.0f;
+
+        // Extract binary16 exponent, remove its bias, add in the bias
+        // of a float exponent and shift to correct bit location
+        // (significand width includes the implicit bit so shift one
+        // less).
+        int bin16Exp = (bin16ExpBits >> 10) - 15;
+        if (bin16Exp == -15) {
+            // For subnormal binary16 values and 0, the numerical
+            // value is 2^24 * the significand as an integer (no
+            // implicit bit).
+            return sign * (0x1p-24f * bin16SignifBits);
+        } else if (bin16Exp == 16) {
+            return (bin16SignifBits == 0) ?
+                sign * Float.POSITIVE_INFINITY :
+                Float.intBitsToFloat((bin16SignBit << 16) |
+                                     0x7f80_0000 |
+                                     // Preserve NaN signif bits
+                                     ( bin16SignifBits << SIGNIF_SHIFT ));
+        }
+
+        assert -15 < bin16Exp  && bin16Exp < 16;
+
+        int floatExpBits = (bin16Exp + FloatConsts.EXP_BIAS)
+            << (FloatConsts.SIGNIFICAND_WIDTH - 1);
+
+        // Compute and combine result sign, exponent, and significand bits.
+        return Float.intBitsToFloat((bin16SignBit << 16) |
+                                    floatExpBits |
+                                    (bin16SignifBits << SIGNIF_SHIFT));
+    }
+
+    /**
+     * {@return the floating-point binary16 value, encoded in a {@code
+     * short}, closest in value to the argument}
+     * The conversion is computed under the {@linkplain
+     * java.math.RoundingMode#HALF_EVEN round to nearest even rounding
+     * mode}.
+     *
+     * Special cases:
+     * <ul>
+     * <li> If the argument is zero, the result is a zero with the
+     * same sign as the argument.
+     * <li> If the argument is infinite, the result is an infinity
+     * with the same sign as the argument.
+     * <li> If the argument is a NaN, the result is a NaN.
+     * </ul>
+     *
+     * The {@linkplain ##binary16Format binary16 format} is discussed in
+     * more detail in the {@link #float16ToFloat} method.
+     *
+     * @apiNote
+     * This method corresponds to the convertFormat operation defined
+     * in IEEE 754 from the binary32 format to the binary16 format.
+     * The operation of this method is analogous to a primitive
+     * narrowing conversion (JLS {@jls 5.1.3}).
+     *
+     * @param f the {@code float} value to convert to binary16
+     * @since 20
+     */
+    @IntrinsicCandidate
+    public static short floatToFloat16(float f) {
+        int doppel = Float.floatToRawIntBits(f);
+        short sign_bit = (short)((doppel & 0x8000_0000) >> 16);
+
+        if (Float.isNaN(f)) {
+            // Preserve sign and attempt to preserve significand bits
+            return (short)(sign_bit
+                    | 0x7c00 // max exponent + 1
+                    // Preserve high order bit of float NaN in the
+                    // binary16 result NaN (tenth bit); OR in remaining
+                    // bits into lower 9 bits of binary 16 significand.
+                    | (doppel & 0x007f_e000) >> 13 // 10 bits
+                    | (doppel & 0x0000_1ff0) >> 4  //  9 bits
+                    | (doppel & 0x0000_000f));     //  4 bits
+        }
+
+        float abs_f = Math.abs(f);
+
+        // The overflow threshold is binary16 MAX_VALUE + 1/2 ulp
+        if (abs_f >= (0x1.ffcp15f + 0x0.002p15f) ) {
+            return (short)(sign_bit | 0x7c00); // Positive or negative infinity
+        }
+
+        // Smallest magnitude nonzero representable binary16 value
+        // is equal to 0x1.0p-24; half-way and smaller rounds to zero.
+        if (abs_f <= 0x1.0p-24f * 0.5f) { // Covers float zeros and subnormals.
+            return sign_bit; // Positive or negative zero
+        }
+
+        // Dealing with finite values in exponent range of binary16
+        // (when rounding is done, could still round up)
+        int exp = Math.getExponent(f);
+        assert -25 <= exp && exp <= 15;
+
+        // For binary16 subnormals, beside forcing exp to -15, retain
+        // the difference expdelta = E_min - exp.  This is the excess
+        // shift value, in addition to 13, to be used in the
+        // computations below.  Further the (hidden) msb with value 1
+        // in f must be involved as well.
+        int expdelta = 0;
+        int msb = 0x0000_0000;
+        if (exp < -14) {
+            expdelta = -14 - exp;
+            exp = -15;
+            msb = 0x0080_0000;
+        }
+        int f_signif_bits = doppel & 0x007f_ffff | msb;
+
+        // Significand bits as if using rounding to zero (truncation).
+        short signif_bits = (short)(f_signif_bits >> (13 + expdelta));
+
+        // For round to nearest even, determining whether or not to
+        // round up (in magnitude) is a function of the least
+        // significant bit (LSB), the next bit position (the round
+        // position), and the sticky bit (whether there are any
+        // nonzero bits in the exact result to the right of the round
+        // digit). An increment occurs in three cases:
+        //
+        // LSB  Round Sticky
+        // 0    1     1
+        // 1    1     0
+        // 1    1     1
+        // See "Computer Arithmetic Algorithms," Koren, Table 4.9
+
+        int lsb    = f_signif_bits & (1 << 13 + expdelta);
+        int round  = f_signif_bits & (1 << 12 + expdelta);
+        int sticky = f_signif_bits & ((1 << 12 + expdelta) - 1);
+
+        if (round != 0 && ((lsb | sticky) != 0 )) {
+            signif_bits++;
+        }
+
+        // No bits set in significand beyond the *first* exponent bit,
+        // not just the significand; quantity is added to the exponent
+        // to implement a carry out from rounding the significand.
+        assert (0xf800 & signif_bits) == 0x0;
+
+        return (short)(sign_bit | ( ((exp + 15) << 10) + signif_bits ) );
+    }
+
+    /**
      * Compares two {@code Float} objects numerically.
      *
      * This method imposes a total order on {@code Float} objects
@@ -998,10 +1247,14 @@ public final class Float extends Number
      *
      * This ensures that the <i>natural ordering</i> of {@code Float}
      * objects imposed by this method is <i>consistent with
-     * equals</i>; see <a href="Double.html#equivalenceRelation">this
-     * discussion</a> for details of floating-point comparison and
-     * ordering.
+     * equals</i>; see {@linkplain Double##equivalenceRelation this
+     * discussion for details of floating-point comparison and
+     * ordering}.
      *
+     * @apiNote
+     * For a discussion of differences between the total order of this
+     * method compared to the total order defined by the IEEE 754
+     * standard, see the note in {@link Double#compareTo(Double)}.
      *
      * @param   anotherFloat   the {@code Float} to be compared.
      * @return  the value {@code 0} if {@code anotherFloat} is
@@ -1015,6 +1268,7 @@ public final class Float extends Number
      * @jls 15.20.1 Numerical Comparison Operators {@code <}, {@code <=}, {@code >}, and {@code >=}
      * @since   1.2
      */
+    @Override
     public int compareTo(Float anotherFloat) {
         return Float.compare(value, anotherFloat.value);
     }
@@ -1024,8 +1278,16 @@ public final class Float extends Number
      * of the integer value returned is the same as that of the
      * integer that would be returned by the call:
      * <pre>
-     *    new Float(f1).compareTo(new Float(f2))
+     *    Float.valueOf(f1).compareTo(Float.valueOf(f2))
      * </pre>
+     *
+     * @apiNote
+     * One idiom to implement {@linkplain
+     * Double##repEquivalence representation equivalence} on {@code
+     * float} values is
+     * {@snippet lang="java" :
+     * Float.compare(a, b) == 0
+     * }
      *
      * @param   f1        the first {@code float} to compare.
      * @param   f2        the second {@code float} to compare.

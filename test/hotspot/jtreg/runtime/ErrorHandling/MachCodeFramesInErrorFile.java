@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,7 +24,11 @@
 /*
  * @test
  * @bug 8272586
+ * @requires vm.flagless
  * @requires vm.compiler2.enabled
+ * @requires test.thread.factory == null
+ * @comment This test relies on crashing which conflicts with ASAN checks
+ * @requires !vm.asan
  * @summary Test that abstract machine code is dumped for the top frames in a hs-err log
  * @library /test/lib
  * @modules java.base/jdk.internal.misc
@@ -34,6 +38,7 @@
  * @run driver MachCodeFramesInErrorFile
  */
 
+import java.io.File;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -113,7 +118,7 @@ public class MachCodeFramesInErrorFile {
      * expected to have a min number of MachCode sections.
      */
     private static void run(boolean crashInJava) throws Exception {
-        ProcessBuilder pb = ProcessTools.createJavaProcessBuilder(
+        ProcessBuilder pb = ProcessTools.createLimitedTestJavaProcessBuilder(
             "-Xmx64m", "--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED",
             "-XX:-CreateCoredumpOnCrash",
             "-Xcomp",
@@ -126,12 +131,8 @@ public class MachCodeFramesInErrorFile {
         OutputAnalyzer output = new OutputAnalyzer(pb.start());
 
         // Extract hs_err_pid file.
-        String hs_err_file = output.firstMatch("# *(\\S*hs_err_pid\\d+\\.log)", 1);
-        if (hs_err_file == null) {
-            output.reportDiagnosticSummary();
-            throw new RuntimeException("Did not find hs_err_pid file in output");
-        }
-        Path hsErrPath = Paths.get(hs_err_file);
+        File hs_err_file = HsErrFileUtils.openHsErrFileFromOutput(output);
+        Path hsErrPath = hs_err_file.toPath();
         if (!Files.exists(hsErrPath)) {
             throw new RuntimeException("hs_err_pid file missing at " + hsErrPath + ".\n");
         }
@@ -168,6 +169,10 @@ public class MachCodeFramesInErrorFile {
         Matcher matcher = Pattern.compile("\\[MachCode\\]\\s*\\[Verified Entry Point\\]\\s*  # \\{method\\} \\{[^}]*\\} '([^']+)' '([^']+)' in '([^']+)'", Pattern.DOTALL).matcher(hsErr);
         List<String> machCodeHeaders = matcher.results().map(mr -> String.format("'%s' '%s' in '%s'", mr.group(1), mr.group(2), mr.group(3))).collect(Collectors.toList());
         int minExpectedMachCodeSections = Math.max(1, compiledJavaFrames);
+        if ((hsErr.contains("stop reattempt (retry printing native stack (no source info))") || hsErr.contains("reason: Step time limit reached"))) {
+            // In this case, the vm only prints the crashing frame.
+            minExpectedMachCodeSections = 1;
+        }
         if (machCodeHeaders.size() < minExpectedMachCodeSections) {
             Asserts.fail(machCodeHeaders.size() + " < " + minExpectedMachCodeSections);
         }

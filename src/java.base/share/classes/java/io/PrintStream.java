@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1996, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1996, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,9 +30,6 @@ import java.util.Locale;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.charset.UnsupportedCharsetException;
-import jdk.internal.access.JavaIOPrintStreamAccess;
-import jdk.internal.access.SharedSecrets;
-import jdk.internal.misc.InternalLock;
 
 /**
  * A {@code PrintStream} adds functionality to another output stream,
@@ -67,9 +64,6 @@ import jdk.internal.misc.InternalLock;
 public class PrintStream extends FilterOutputStream
     implements Appendable, Closeable
 {
-    // initialized to null when PrintStream is sub-classed
-    private final InternalLock lock;
-
     private final boolean autoFlush;
     private boolean trouble = false;
     private Formatter formatter;
@@ -117,13 +111,6 @@ public class PrintStream extends FilterOutputStream
         this.charset = out instanceof PrintStream ps ? ps.charset() : Charset.defaultCharset();
         this.charOut = new OutputStreamWriter(this, charset);
         this.textOut = new BufferedWriter(charOut);
-
-        // use monitors when PrintStream is sub-classed
-        if (getClass() == PrintStream.class) {
-            lock = InternalLock.newLockOrNull();
-        } else {
-            lock = null;
-        }
     }
 
     /* Variant of the private constructor so that the given charset name
@@ -167,6 +154,7 @@ public class PrintStream extends FilterOutputStream
      * @see java.io.PrintWriter#PrintWriter(java.io.OutputStream, boolean)
      * @see Charset#defaultCharset()
      */
+    @SuppressWarnings("this-escape")
     public PrintStream(OutputStream out, boolean autoFlush) {
         this(autoFlush, requireNonNull(out, "Null output stream"));
     }
@@ -212,19 +200,13 @@ public class PrintStream extends FilterOutputStream
      *
      * @since  10
      */
+    @SuppressWarnings("this-escape")
     public PrintStream(OutputStream out, boolean autoFlush, Charset charset) {
         super(out);
         this.autoFlush = autoFlush;
         this.charOut = new OutputStreamWriter(this, charset);
         this.textOut = new BufferedWriter(charOut);
         this.charset = charset;
-
-        // use monitors when PrintStream is sub-classed
-        if (getClass() == PrintStream.class) {
-            lock = InternalLock.newLockOrNull();
-        } else {
-            lock = null;
-        }
     }
 
     /**
@@ -247,14 +229,11 @@ public class PrintStream extends FilterOutputStream
      *          created, or if some other error occurs while opening or
      *          creating the file
      *
-     * @throws  SecurityException
-     *          If a security manager is present and {@link
-     *          SecurityManager#checkWrite checkWrite(fileName)} denies write
-     *          access to the file
      * @see Charset#defaultCharset()
      *
      * @since  1.5
      */
+    @SuppressWarnings("this-escape")
     public PrintStream(String fileName) throws FileNotFoundException {
         this(false, new FileOutputStream(fileName));
     }
@@ -280,11 +259,6 @@ public class PrintStream extends FilterOutputStream
      *          regular file and a new regular file of that name cannot be
      *          created, or if some other error occurs while opening or
      *          creating the file
-     *
-     * @throws  SecurityException
-     *          If a security manager is present and {@link
-     *          SecurityManager#checkWrite checkWrite(fileName)} denies write
-     *          access to the file
      *
      * @throws  UnsupportedEncodingException
      *          If the named charset is not supported
@@ -317,11 +291,6 @@ public class PrintStream extends FilterOutputStream
      * @throws  IOException
      *          if an I/O error occurs while opening or creating the file
      *
-     * @throws  SecurityException
-     *          If a security manager is present and {@link
-     *          SecurityManager#checkWrite checkWrite(fileName)} denies write
-     *          access to the file
-     *
      * @since  10
      */
     public PrintStream(String fileName, Charset charset) throws IOException {
@@ -348,14 +317,11 @@ public class PrintStream extends FilterOutputStream
      *          created, or if some other error occurs while opening or
      *          creating the file
      *
-     * @throws  SecurityException
-     *          If a security manager is present and {@link
-     *          SecurityManager#checkWrite checkWrite(file.getPath())}
-     *          denies write access to the file
      * @see Charset#defaultCharset()
      *
      * @since  1.5
      */
+    @SuppressWarnings("this-escape")
     public PrintStream(File file) throws FileNotFoundException {
         this(false, new FileOutputStream(file));
     }
@@ -381,11 +347,6 @@ public class PrintStream extends FilterOutputStream
      *          regular file and a new regular file of that name cannot be
      *          created, or if some other error occurs while opening or
      *          creating the file
-     *
-     * @throws  SecurityException
-     *          If a security manager is present and {@link
-     *          SecurityManager#checkWrite checkWrite(file.getPath())}
-     *          denies write access to the file
      *
      * @throws  UnsupportedEncodingException
      *          If the named charset is not supported
@@ -419,11 +380,6 @@ public class PrintStream extends FilterOutputStream
      * @throws  IOException
      *          if an I/O error occurs while opening or creating the file
      *
-     * @throws  SecurityException
-     *          If a security manager is present and {@link
-     *          SecurityManager#checkWrite checkWrite(file.getPath())}
-     *          denies write access to the file
-     *
      * @since  10
      */
     public PrintStream(File file, Charset charset) throws IOException {
@@ -444,27 +400,14 @@ public class PrintStream extends FilterOutputStream
      */
     @Override
     public void flush() {
-        if (lock != null) {
-            lock.lock();
+        synchronized (this) {
             try {
-                implFlush();
-            } finally {
-                lock.unlock();
+                ensureOpen();
+                out.flush();
             }
-        } else {
-            synchronized (this) {
-                implFlush();
+            catch (IOException x) {
+                trouble = true;
             }
-        }
-    }
-
-    private void implFlush() {
-        try {
-            ensureOpen();
-            out.flush();
-        }
-        catch (IOException x) {
-            trouble = true;
         }
     }
 
@@ -478,33 +421,20 @@ public class PrintStream extends FilterOutputStream
      */
     @Override
     public void close() {
-        if (lock != null) {
-            lock.lock();
-            try {
-                implClose();
-            } finally {
-                lock.unlock();
+        synchronized (this) {
+            if (!closing) {
+                closing = true;
+                try {
+                    textOut.close();
+                    out.close();
+                }
+                catch (IOException x) {
+                    trouble = true;
+                }
+                textOut = null;
+                charOut = null;
+                out = null;
             }
-        } else {
-            synchronized (this) {
-                implClose();
-            }
-        }
-    }
-
-    private void implClose() {
-        if (!closing) {
-            closing = true;
-            try {
-                textOut.close();
-                out.close();
-            }
-            catch (IOException x) {
-                trouble = true;
-            }
-            textOut = null;
-            charOut = null;
-            out = null;
         }
     }
 
@@ -571,32 +501,16 @@ public class PrintStream extends FilterOutputStream
     @Override
     public void write(int b) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implWrite(b);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implWrite(b);
-                }
+            synchronized (this) {
+                ensureOpen();
+                out.write(b);
+                if ((b == '\n') && autoFlush)
+                    out.flush();
             }
-        }
-        catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         }
         catch (IOException x) {
             trouble = true;
         }
-    }
-
-    private void implWrite(int b) throws IOException {
-        ensureOpen();
-        out.write(b);
-        if ((b == '\n') && autoFlush)
-            out.flush();
     }
 
     /**
@@ -612,38 +526,22 @@ public class PrintStream extends FilterOutputStream
      * @param  buf   A byte array
      * @param  off   Offset from which to start taking bytes
      * @param  len   Number of bytes to write
+     * @throws IndexOutOfBoundsException {@inheritDoc}
      */
     @Override
     public void write(byte[] buf, int off, int len) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implWrite(buf, off, len);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implWrite(buf, off, len);
-                }
+            synchronized (this) {
+                ensureOpen();
+                out.write(buf, off, len);
+                if (autoFlush)
+                    out.flush();
             }
-        }
-        catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         }
         catch (IOException x) {
             trouble = true;
         }
     }
-
-    private void implWrite(byte[] buf, int off, int len) throws IOException {
-        ensureOpen();
-        out.write(buf, off, len);
-        if (autoFlush)
-            out.flush();
-    }
-
 
     /**
      * Writes all bytes from the specified byte array to this stream. If
@@ -674,8 +572,6 @@ public class PrintStream extends FilterOutputStream
      *
      * @see #writeBytes(byte[])
      * @see #write(byte[],int,int)
-     *
-     * @since 14
      */
     @Override
     public void write(byte[] buf) throws IOException {
@@ -711,36 +607,21 @@ public class PrintStream extends FilterOutputStream
 
     private void write(char[] buf) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implWrite(buf);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implWrite(buf);
+            synchronized (this) {
+                ensureOpen();
+                textOut.write(buf);
+                textOut.flushBuffer();
+                charOut.flushBuffer();
+                if (autoFlush) {
+                    for (int i = 0; i < buf.length; i++)
+                        if (buf[i] == '\n') {
+                            out.flush();
+                            break;
+                        }
                 }
             }
-        } catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         } catch (IOException x) {
             trouble = true;
-        }
-    }
-
-    private void implWrite(char[] buf) throws IOException {
-        ensureOpen();
-        textOut.write(buf);
-        textOut.flushBuffer();
-        charOut.flushBuffer();
-        if (autoFlush) {
-            for (int i = 0; i < buf.length; i++)
-                if (buf[i] == '\n') {
-                    out.flush();
-                    break;
-                }
         }
     }
 
@@ -750,67 +631,35 @@ public class PrintStream extends FilterOutputStream
     // getClass() == PrintStream.class to avoid compatibility issues.
     private void writeln(char[] buf) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implWriteln(buf);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implWriteln(buf);
-                }
+            synchronized (this) {
+                ensureOpen();
+                textOut.write(buf);
+                textOut.newLine();
+                textOut.flushBuffer();
+                charOut.flushBuffer();
+                if (autoFlush)
+                    out.flush();
             }
-        }
-        catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         }
         catch (IOException x) {
             trouble = true;
         }
-    }
-
-    private void implWriteln(char[] buf) throws IOException {
-        ensureOpen();
-        textOut.write(buf);
-        textOut.newLine();
-        textOut.flushBuffer();
-        charOut.flushBuffer();
-        if (autoFlush)
-            out.flush();
     }
 
     private void write(String s) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implWrite(s);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implWrite(s);
-                }
+            synchronized (this) {
+                ensureOpen();
+                textOut.write(s);
+                textOut.flushBuffer();
+                charOut.flushBuffer();
+                if (autoFlush && (s.indexOf('\n') >= 0))
+                    out.flush();
             }
-        }
-        catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         }
         catch (IOException x) {
             trouble = true;
         }
-    }
-
-    private void implWrite(String s) throws IOException {
-        ensureOpen();
-        textOut.write(s);
-        textOut.flushBuffer();
-        charOut.flushBuffer();
-        if (autoFlush && (s.indexOf('\n') >= 0))
-            out.flush();
     }
 
     // Used to optimize away back-to-back flushing and synchronization when
@@ -819,67 +668,35 @@ public class PrintStream extends FilterOutputStream
     // getClass() == PrintStream.class to avoid compatibility issues.
     private void writeln(String s) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implWriteln(s);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implWriteln(s);
-                }
+            synchronized (this) {
+                ensureOpen();
+                textOut.write(s);
+                textOut.newLine();
+                textOut.flushBuffer();
+                charOut.flushBuffer();
+                if (autoFlush)
+                    out.flush();
             }
-        }
-        catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         }
         catch (IOException x) {
             trouble = true;
         }
-    }
-
-    private void implWriteln(String s) throws IOException {
-        ensureOpen();
-        textOut.write(s);
-        textOut.newLine();
-        textOut.flushBuffer();
-        charOut.flushBuffer();
-        if (autoFlush)
-            out.flush();
     }
 
     private void newLine() {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implNewLine();
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implNewLine();
-                }
+            synchronized (this) {
+                ensureOpen();
+                textOut.newLine();
+                textOut.flushBuffer();
+                charOut.flushBuffer();
+                if (autoFlush)
+                    out.flush();
             }
-        }
-        catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         }
         catch (IOException x) {
             trouble = true;
         }
-    }
-
-    private void implNewLine() throws IOException {
-        ensureOpen();
-        textOut.newLine();
-        textOut.flushBuffer();
-        charOut.flushBuffer();
-        if (autoFlush)
-            out.flush();
     }
 
     /* Methods that do not terminate lines */
@@ -1205,9 +1022,9 @@ public class PrintStream extends FilterOutputStream
      * {@code out.printf(format, args)} behaves
      * in exactly the same way as the invocation
      *
-     * <pre>{@code
+     * {@snippet lang=java :
      *     out.format(format, args)
-     * }</pre>
+     * }
      *
      * @param  format
      *         A format string as described in <a
@@ -1252,9 +1069,9 @@ public class PrintStream extends FilterOutputStream
      * {@code out.printf(l, format, args)} behaves
      * in exactly the same way as the invocation
      *
-     * <pre>{@code
+     * {@snippet lang=java :
      *     out.format(l, format, args)
-     * }</pre>
+     * }
      *
      * @param  l
      *         The {@linkplain java.util.Locale locale} to apply during
@@ -1339,31 +1156,16 @@ public class PrintStream extends FilterOutputStream
      */
     public PrintStream format(String format, Object ... args) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implFormat(format, args);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implFormat(format, args);
-                }
+            synchronized (this) {
+                ensureOpen();
+                if ((formatter == null) || (formatter.locale() != Locale.getDefault(Locale.Category.FORMAT)))
+                    formatter = new Formatter((Appendable) this);
+                formatter.format(Locale.getDefault(Locale.Category.FORMAT), format, args);
             }
-        } catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         } catch (IOException x) {
             trouble = true;
         }
         return this;
-    }
-
-    private void implFormat(String format, Object ... args) throws IOException {
-        ensureOpen();
-        if ((formatter == null) || (formatter.locale() != Locale.getDefault(Locale.Category.FORMAT)))
-            formatter = new Formatter((Appendable) this);
-        formatter.format(Locale.getDefault(Locale.Category.FORMAT), format, args);
     }
 
     /**
@@ -1408,46 +1210,32 @@ public class PrintStream extends FilterOutputStream
      */
     public PrintStream format(Locale l, String format, Object ... args) {
         try {
-            if (lock != null) {
-                lock.lock();
-                try {
-                    implFormat(l, format, args);
-                } finally {
-                    lock.unlock();
-                }
-            } else {
-                synchronized (this) {
-                    implFormat(l, format, args);
-                }
+            synchronized (this) {
+                ensureOpen();
+                if ((formatter == null) || (formatter.locale() != l))
+                    formatter = new Formatter(this, l);
+                formatter.format(l, format, args);
             }
-        } catch (InterruptedIOException x) {
-            Thread.currentThread().interrupt();
         } catch (IOException x) {
             trouble = true;
         }
         return this;
     }
 
-    private void implFormat(Locale l, String format, Object ... args) throws IOException {
-        ensureOpen();
-        if ((formatter == null) || (formatter.locale() != l))
-            formatter = new Formatter(this, l);
-        formatter.format(l, format, args);
-    }
-
     /**
      * Appends the specified character sequence to this output stream.
      *
      * <p> An invocation of this method of the form {@code out.append(csq)}
-     * behaves in exactly the same way as the invocation
+     * when {@code csq} is not {@code null}, behaves in exactly the same way
+     * as the invocation
      *
-     * <pre>{@code
+     * {@snippet lang=java :
      *     out.print(csq.toString())
-     * }</pre>
+     * }
      *
      * <p> Depending on the specification of {@code toString} for the
      * character sequence {@code csq}, the entire sequence may not be
-     * appended.  For instance, invoking then {@code toString} method of a
+     * appended.  For instance, invoking the {@code toString} method of a
      * character buffer will return a subsequence whose content depends upon
      * the buffer's position and limit.
      *
@@ -1474,9 +1262,9 @@ public class PrintStream extends FilterOutputStream
      * {@code csq} is not {@code null}, behaves in
      * exactly the same way as the invocation
      *
-     * <pre>{@code
+     * {@snippet lang=java :
      *     out.print(csq.subSequence(start, end).toString())
-     * }</pre>
+     * }
      *
      * @param  csq
      *         The character sequence from which a subsequence will be
@@ -1511,9 +1299,9 @@ public class PrintStream extends FilterOutputStream
      * <p> An invocation of this method of the form {@code out.append(c)}
      * behaves in exactly the same way as the invocation
      *
-     * <pre>{@code
+     * {@snippet lang=java :
      *     out.print(c)
-     * }</pre>
+     * }
      *
      * @param  c
      *         The 16-bit character to append
@@ -1534,14 +1322,5 @@ public class PrintStream extends FilterOutputStream
      */
     public Charset charset() {
         return charset;
-    }
-
-    static {
-        SharedSecrets.setJavaIOCPrintStreamAccess(new JavaIOPrintStreamAccess() {
-            public Object lock(PrintStream ps) {
-                Object lock = ps.lock;
-                return (lock != null) ? lock : ps;
-            }
-        });
     }
 }

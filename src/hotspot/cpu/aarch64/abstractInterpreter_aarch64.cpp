@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,7 +23,6 @@
  *
  */
 
-#include "precompiled.hpp"
 #include "interpreter/interpreter.hpp"
 #include "oops/constMethod.hpp"
 #include "oops/klass.inline.hpp"
@@ -90,7 +89,7 @@ int AbstractInterpreter::size_activation(int max_stack,
   // for the callee's params we only need to account for the extra
   // locals.
   int size = overhead +
-         (callee_locals - callee_params) +
+         (callee_locals - callee_params) * Interpreter::stackElementWords +
          monitors * frame::interpreter_frame_monitor_size() +
          // On the top frame, at all times SP <= ESP, and SP is
          // 16-aligned.  We ensure this by adjusting SP on method
@@ -135,7 +134,7 @@ void AbstractInterpreter::layout_activation(Method* method,
   // NOTE the difference in using sender_sp and
   // interpreter_frame_sender_sp interpreter_frame_sender_sp is
   // the original sp of the caller (the unextended_sp) and
-  // sender_sp is fp+8/16 (32bit/64bit) XXX
+  // sender_sp is fp+16
   //
   // The interpreted method entry on AArch64 aligns SP to 16 bytes
   // before generating the fixed part of the activation frame. So there
@@ -150,7 +149,8 @@ void AbstractInterpreter::layout_activation(Method* method,
 
 #ifdef ASSERT
   if (caller->is_interpreted_frame()) {
-    assert(locals < caller->fp() + frame::interpreter_frame_initial_sp_offset, "bad placement");
+    assert(locals <= caller->interpreter_frame_expression_stack(), "bad placement");
+    assert(locals >= interpreter_frame->sender_sp() + max_locals - 1, "bad placement");
   }
 #endif
 
@@ -164,6 +164,19 @@ void AbstractInterpreter::layout_activation(Method* method,
     tempcount*Interpreter::stackElementWords -
     popframe_extra_args;
   interpreter_frame->interpreter_frame_set_last_sp(esp);
+
+  // We have to add extra reserved slots to max_stack. There are 3 users of the extra slots,
+  // none of which are at the same time, so we just need to make sure there is enough room
+  // for the biggest user:
+  //   -reserved slot for exception handler
+  //   -reserved slots for JSR292. Method::extra_stack_entries() is the size.
+  //   -reserved slots for TraceBytecodes
+  int max_stack = method->constMethod()->max_stack() + MAX2(3, Method::extra_stack_entries());
+  intptr_t* extended_sp = (intptr_t*) monbot  -
+    (max_stack * Interpreter::stackElementWords) -
+    popframe_extra_args;
+  extended_sp = align_down(extended_sp, StackAlignmentInBytes);
+  interpreter_frame->interpreter_frame_set_extended_sp(extended_sp);
 
   // All frames but the initial (oldest) interpreter frame we fill in have
   // a value for sender_sp that allows walking the stack but isn't

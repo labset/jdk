@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2020, 2022 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -26,8 +26,8 @@
 #ifndef SHARE_MEMORY_METASPACE_COUNTERS_HPP
 #define SHARE_MEMORY_METASPACE_COUNTERS_HPP
 
-#include "metaprogramming/isSigned.hpp"
-#include "runtime/atomic.hpp"
+#include "cppstdlib/type_traits.hpp"
+#include "runtime/atomicAccess.hpp"
 #include "utilities/debug.hpp"
 #include "utilities/globalDefinitions.hpp"
 
@@ -43,7 +43,7 @@ class AbstractCounter {
   T _c;
 
   // Only allow unsigned values for now
-  STATIC_ASSERT(IsSigned<T>::value == false);
+  STATIC_ASSERT(std::is_signed<T>::value == false);
 
 public:
 
@@ -86,28 +86,28 @@ class AbstractAtomicCounter {
   volatile T _c;
 
   // Only allow unsigned values for now
-  STATIC_ASSERT(IsSigned<T>::value == false);
+  STATIC_ASSERT(std::is_signed<T>::value == false);
 
 public:
 
   AbstractAtomicCounter() : _c(0) {}
 
-  T get() const               { return _c; }
+  T get() const               { return AtomicAccess::load(&_c); }
 
   void increment() {
-    Atomic::inc(&_c);
+    AtomicAccess::inc(&_c, memory_order_relaxed);
   }
 
   void decrement() {
-    Atomic::dec(&_c);
+    AtomicAccess::dec(&_c, memory_order_relaxed);
   }
 
   void increment_by(T v) {
-    Atomic::add(&_c, v);
+    AtomicAccess::add(&_c, v, memory_order_relaxed);
   }
 
   void decrement_by(T v) {
-    Atomic::sub(&_c, v);
+    AtomicAccess::sub(&_c, v, memory_order_relaxed);
   }
 
 #ifdef ASSERT

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,224 +22,83 @@
  *
  */
 
-#include "precompiled.hpp"
 #include "gc/g1/g1BarrierSet.hpp"
+#include "gc/g1/g1CardTableClaimTable.inline.hpp"
+#include "gc/g1/g1CollectedHeap.inline.hpp"
 #include "gc/g1/g1ConcurrentRefine.hpp"
-#include "gc/g1/g1ConcurrentRefineStats.hpp"
+#include "gc/g1/g1ConcurrentRefineStats.inline.hpp"
+#include "gc/g1/g1ConcurrentRefineSweepTask.hpp"
 #include "gc/g1/g1ConcurrentRefineThread.hpp"
-#include "gc/g1/g1DirtyCardQueue.hpp"
+#include "gc/shared/gcTraceTime.inline.hpp"
 #include "gc/shared/suspendibleThreadSet.hpp"
 #include "logging/log.hpp"
-#include "runtime/atomic.hpp"
-#include "runtime/init.hpp"
-#include "runtime/safepoint.hpp"
+#include "runtime/cpuTimeCounters.hpp"
+#include "runtime/mutexLocker.hpp"
+#include "runtime/os.hpp"
 #include "runtime/thread.hpp"
+#include "utilities/debug.hpp"
+#include "utilities/formatBuffer.hpp"
+#include "utilities/globalDefinitions.hpp"
+#include "utilities/ticks.hpp"
 
-G1ConcurrentRefineThread::G1ConcurrentRefineThread(G1ConcurrentRefine* cr, uint worker_id) :
+G1ConcurrentRefineThread::G1ConcurrentRefineThread(G1ConcurrentRefine* cr) :
   ConcurrentGCThread(),
-  _vtime_start(0.0),
-  _vtime_accum(0.0),
-  _refinement_stats(new G1ConcurrentRefineStats()),
-  _worker_id(worker_id),
+  _notifier(Mutex::nosafepoint, "G1 Refine Control", true),
+  _requested_active(false),
   _cr(cr)
 {
-  // set name
-  set_name("G1 Refine#%d", worker_id);
-}
-
-G1ConcurrentRefineThread::~G1ConcurrentRefineThread() {
-  delete _refinement_stats;
+  set_name("G1 Refine Control");
 }
 
 void G1ConcurrentRefineThread::run_service() {
-  _vtime_start = os::elapsedVTime();
+  while (wait_for_work()) {
+    SuspendibleThreadSetJoiner sts_join;
+    report_active("Activated");
+    while (!should_terminate()) {
+      if (sts_join.should_yield()) {
+        report_inactive("Paused");
+        sts_join.yield();
+        // Reset after yield rather than accumulating across yields, else a
+        // very long running thread could overflow.
+        report_active("Resumed");
+      }
+      // Look if we want to do refinement. If we don't then don't do any refinement
+      // this. This thread may have just woken up but no threads are currently
+      // needed, which is common.  In this case we want to just go back to
+      // waiting, with a minimum of fuss; in particular, don't do any "premature"
+      // refinement.  However, adjustment may be pending but temporarily
+      // blocked. In that case we wait for adjustment to succeed.
+      Ticks adjust_start = Ticks::now();
+      if (cr()->adjust_num_threads_periodically()) {
+        GCTraceTime(Info, gc, refine) tm("Concurrent Refine Cycle");
+        do_refinement();
+      } else {
+        log_debug(gc, refine)("Concurrent Refine Adjust Only (#threads wanted: %u adjustment_needed: %s wait_for_heap_lock: %s) %.2fms",
+                              cr()->num_threads_wanted(),
+                              BOOL_TO_STR(cr()->is_thread_adjustment_needed()),
+                              BOOL_TO_STR(cr()->heap_was_locked()),
+                              (Ticks::now() - adjust_start).seconds() * MILLIUNITS);
 
-  while (wait_for_completed_buffers()) {
-    // For logging.
-    G1ConcurrentRefineStats start_stats = *_refinement_stats;
-    G1ConcurrentRefineStats total_stats; // Accumulate over activation.
-
-    {
-      SuspendibleThreadSetJoiner sts_join;
-
-      log_debug(gc, refine)("Activated worker %d, on threshold: %zu, current: %zu",
-                            _worker_id, _cr->activation_threshold(_worker_id),
-                            G1BarrierSet::dirty_card_queue_set().num_cards());
-
-      while (!should_terminate()) {
-        if (sts_join.should_yield()) {
-          // Accumulate changed stats before possible GC that resets stats.
-          total_stats += *_refinement_stats - start_stats;
-          sts_join.yield();
-          // Reinitialize baseline stats after safepoint.
-          start_stats = *_refinement_stats;
-          continue;             // Re-check for termination after yield delay.
-        }
-
-        if (!_cr->do_refinement_step(_worker_id, _refinement_stats)) {
-          if (maybe_deactivate()) {
-            break;
-          }
-        }
+        deactivate();
+        break;
       }
     }
-
-    total_stats += *_refinement_stats - start_stats;
-    log_debug(gc, refine)("Deactivated worker %d, off threshold: %zu, "
-                          "cards: %zu, refined %zu, rate %1.2fc/ms",
-                          _worker_id, _cr->deactivation_threshold(_worker_id),
-                          G1BarrierSet::dirty_card_queue_set().num_cards(),
-                          total_stats.refined_cards(),
-                          total_stats.refinement_rate_ms());
-
-    if (os::supports_vtime()) {
-      _vtime_accum = (os::elapsedVTime() - _vtime_start);
-    } else {
-      _vtime_accum = 0.0;
-    }
+    report_inactive("Deactivated");
+    update_perf_counter_cpu_time();
   }
 
-  log_debug(gc, refine)("Stopping %d", _worker_id);
+  log_debug(gc, refine)("Stopping %s", name());
 }
 
-void G1ConcurrentRefineThread::stop_service() {
-  activate();
+void G1ConcurrentRefineThread::report_active(const char* reason) const {
+  log_trace(gc, refine)("%s active (%s)", name(), reason);
 }
 
-G1PrimaryConcurrentRefineThread*
-G1PrimaryConcurrentRefineThread::create(G1ConcurrentRefine* cr) {
-  G1PrimaryConcurrentRefineThread* crt =
-    new (std::nothrow) G1PrimaryConcurrentRefineThread(cr);
-  if (crt != nullptr) {
-    crt->create_and_start();
-  }
-  return crt;
+void G1ConcurrentRefineThread::report_inactive(const char* reason) const {
+  log_trace(gc, refine)("%s inactive (%s)", name(), reason);
 }
 
-G1PrimaryConcurrentRefineThread::G1PrimaryConcurrentRefineThread(G1ConcurrentRefine* cr) :
-  G1ConcurrentRefineThread(cr, 0),
-  _notifier(0),
-  _threshold(0)
-{}
-
-void G1PrimaryConcurrentRefineThread::stop_service() {
-  G1DirtyCardQueueSet& dcqs = G1BarrierSet::dirty_card_queue_set();
-  dcqs.set_refinement_notification_thread(nullptr);
-  G1ConcurrentRefineThread::stop_service();
-}
-
-// The primary refinement thread is notified when buffers/cards are added to
-// the dirty card queue.  That can happen in fairly arbitrary contexts.
-// This means there may be arbitrary other locks held when notifying.  We
-// also don't want to have to take a lock on the fairly common notification
-// path, as contention for that lock can significantly impact performance.
-//
-// We use a semaphore to implement waiting and unblocking, to avoid
-// lock rank checking issues.  (We could alternatively use an
-// arbitrarily low ranked mutex.)  The atomic variable _threshold is
-// used to decide when to signal the semaphore.  When its value is
-// SIZE_MAX then the thread is running.  Otherwise, the thread should
-// be requested to run when notified that the number of cards has
-// exceeded the threshold value.
-
-bool G1PrimaryConcurrentRefineThread::wait_for_completed_buffers() {
-  assert(this == Thread::current(), "precondition");
-  _notifier.wait();
-  assert(Atomic::load(&_threshold) == SIZE_MAX || should_terminate(), "incorrect state");
-  return !should_terminate();
-}
-
-bool G1PrimaryConcurrentRefineThread::maybe_deactivate() {
-  assert(this == Thread::current(), "precondition");
-  assert(Atomic::load(&_threshold) == SIZE_MAX, "incorrect state");
-  Atomic::store(&_threshold, cr()->primary_activation_threshold());
-  // Always deactivate when no refinement work found.  New refinement
-  // work may have arrived after we tried, but checking for that would
-  // still be racy.  Instead, the next time additional work is made
-  // available we'll get reactivated.
-  return true;
-}
-
-void G1PrimaryConcurrentRefineThread::activate() {
-  assert(this != Thread::current(), "precondition");
-  // The thread is running when notifications are disabled, so shouldn't
-  // signal is this case.  But there's a race between stop requests and
-  // maybe_deactivate, so also signal if stop requested.
-  size_t threshold = Atomic::load(&_threshold);
-  if (((threshold != SIZE_MAX) &&
-       (threshold == Atomic::cmpxchg(&_threshold, threshold, SIZE_MAX))) ||
-      should_terminate()) {
-    _notifier.signal();
-  }
-}
-
-void G1PrimaryConcurrentRefineThread::notify(size_t num_cards) {
-  // Only activate if the number of pending cards exceeds the activation
-  // threshold.  Notification is disabled when the thread is running, by
-  // setting _threshold to SIZE_MAX.  A relaxed load is sufficient; we don't
-  // need to be precise about this.
-  if (num_cards > Atomic::load(&_threshold)) {
-    // Discard notifications occurring during a safepoint.  A GC safepoint
-    // may dirty some cards (such as during reference processing), possibly
-    // leading to notification.  End-of-GC update_notify_threshold activates
-    // the primary thread if needed.  Non-GC safepoints are expected to
-    // rarely (if ever) dirty cards, so defer activation to a post-safepoint
-    // notification.
-    if (!SafepointSynchronize::is_at_safepoint()) {
-      activate();
-    }
-  }
-}
-
-void G1PrimaryConcurrentRefineThread::update_notify_threshold(size_t threshold) {
-#ifdef ASSERT
-  if (is_init_completed()) {
-    assert_at_safepoint();
-    assert(Thread::current()->is_VM_thread(), "precondition");
-  }
-#endif // ASSERT
-  // If _threshold is SIZE_MAX then the thread is active and the value
-  // of _threshold shouldn't be changed.
-  if (Atomic::load(&_threshold) != SIZE_MAX) {
-    Atomic::store(&_threshold, threshold);
-    if (G1BarrierSet::dirty_card_queue_set().num_cards() > threshold) {
-      activate();
-    }
-  }
-}
-
-class G1SecondaryConcurrentRefineThread final : public G1ConcurrentRefineThread {
-  Monitor _notifier;
-  bool _requested_active;
-
-  bool wait_for_completed_buffers() override;
-  bool maybe_deactivate() override;
-
-public:
-  G1SecondaryConcurrentRefineThread(G1ConcurrentRefine* cr, uint worker_id);
-
-  void activate() override;
-};
-
-G1SecondaryConcurrentRefineThread::G1SecondaryConcurrentRefineThread(G1ConcurrentRefine* cr,
-                                                                     uint worker_id) :
-  G1ConcurrentRefineThread(cr, worker_id),
-  _notifier(Mutex::nosafepoint, this->name(), true),
-  _requested_active(false)
-{
-  assert(worker_id > 0, "precondition");
-}
-
-bool G1SecondaryConcurrentRefineThread::wait_for_completed_buffers() {
-  assert(this == Thread::current(), "precondition");
-  MonitorLocker ml(&_notifier, Mutex::_no_safepoint_check_flag);
-  while (!_requested_active && !should_terminate()) {
-    ml.wait();
-  }
-  return !should_terminate();
-}
-
-void G1SecondaryConcurrentRefineThread::activate() {
+void G1ConcurrentRefineThread::activate() {
   assert(this != Thread::current(), "precondition");
   MonitorLocker ml(&_notifier, Mutex::_no_safepoint_check_flag);
   if (!_requested_active || should_terminate()) {
@@ -248,19 +107,95 @@ void G1SecondaryConcurrentRefineThread::activate() {
   }
 }
 
-bool G1SecondaryConcurrentRefineThread::maybe_deactivate() {
+bool G1ConcurrentRefineThread::deactivate() {
   assert(this == Thread::current(), "precondition");
   MutexLocker ml(&_notifier, Mutex::_no_safepoint_check_flag);
   bool requested = _requested_active;
   _requested_active = false;
-  return !requested;            // Deactivate if not recently requested active.
+  return !requested;  // Deactivate only if not recently requested active.
 }
 
-G1ConcurrentRefineThread*
-G1ConcurrentRefineThread::create(G1ConcurrentRefine* cr, uint worker_id) {
-  assert(worker_id > 0, "precondition");
-  G1ConcurrentRefineThread* crt =
-    new (std::nothrow) G1SecondaryConcurrentRefineThread(cr, worker_id);
+void G1ConcurrentRefineThread::stop_service() {
+  activate();
+}
+
+jlong G1ConcurrentRefineThread::cpu_time() {
+  return os::thread_cpu_time(this);
+}
+
+// When inactive, the control thread periodically wakes up to check if there is
+// refinement work pending.
+bool G1ConcurrentRefineThread::wait_for_work() {
+  assert(this == Thread::current(), "precondition");
+  MonitorLocker ml(notifier(), Mutex::_no_safepoint_check_flag);
+  if (!requested_active() && !should_terminate()) {
+    // Rather than trying to be smart about spurious wakeups, we just treat
+    // them as timeouts.
+    ml.wait(cr()->adjust_threads_wait_ms());
+  }
+  // Record adjustment needed whenever reactivating.
+  cr()->record_thread_adjustment_needed();
+  return !should_terminate();
+}
+
+void G1ConcurrentRefineThread::do_refinement() {
+  G1ConcurrentRefineSweepState& state = _cr->sweep_state();
+
+  // Swap card tables.
+
+  // 1. Global card table
+  if (!state.swap_global_card_table()) {
+    log_debug(gc, refine)("GC pause after Global Card Table Swap");
+    return;
+  }
+
+  // 2. Java threads
+  if (!state.swap_java_threads_ct()) {
+    log_debug(gc, refine)("GC pause after Java Thread CT swap");
+    return;
+  }
+
+  // 3. GC threads
+  if (!state.swap_gc_threads_ct()) {
+    log_debug(gc, refine)("GC pause after GC Thread CT swap");
+    return;
+  }
+
+  jlong epoch_yield_duration = G1CollectedHeap::heap()->yield_duration_in_refinement_epoch();
+  jlong next_epoch_start = os::elapsed_counter();
+
+  // 4. Snapshot heap.
+  state.snapshot_heap();
+
+  // 5. Sweep refinement table.
+  log_info(gc, task)("Concurrent Refine Sweep Using %u of %u Workers", cr()->num_threads_wanted(), cr()->max_num_threads());
+
+  jlong total_yield_during_sweep_duration = 0;
+  if (!state.sweep_refinement_table(total_yield_during_sweep_duration)) {
+    log_debug(gc, refine)("GC completed sweeping, aborting concurrent operation");
+    return;
+  }
+
+  // 6. Complete refinement.
+  state.complete_refinement(total_yield_during_sweep_duration, epoch_yield_duration, next_epoch_start);
+}
+
+void G1ConcurrentRefineThread::update_perf_counter_cpu_time() {
+  // The control thread is responsible for updating the CPU time for all workers.
+  if (UsePerfData) {
+    {
+      ThreadTotalCPUTimeClosure tttc(CPUTimeGroups::CPUTimeType::gc_conc_refine);
+      cr()->worker_threads_do(&tttc);
+    }
+    {
+      ThreadTotalCPUTimeClosure tttc(CPUTimeGroups::CPUTimeType::gc_conc_refine_control);
+      cr()->control_thread_do(&tttc);
+    }
+  }
+}
+
+G1ConcurrentRefineThread* G1ConcurrentRefineThread::create(G1ConcurrentRefine* cr) {
+  G1ConcurrentRefineThread* crt = new (std::nothrow) G1ConcurrentRefineThread(cr);
   if (crt != nullptr) {
     crt->create_and_start();
   }

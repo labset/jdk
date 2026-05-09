@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -21,21 +21,20 @@
  * questions.
  */
 
-/**
- * @test
+/*
+ * @test id=default
  * @summary Stress test virtual threads with a variation of the Skynet 1M benchmark
  * @requires vm.continuations
- * @compile --enable-preview -source ${jdk.version} Skynet.java
- * @run main/othervm/timeout=300 --enable-preview Skynet
+ * @requires !vm.debug | vm.gc != "Z"
+ * @run main/othervm/timeout=1600 -Xmx1500m Skynet
  */
-
-/**
- * @test
+/*
+ * @test id=Z
  * @requires vm.debug == true & vm.continuations
  * @requires vm.gc.Z
- * @compile --enable-preview -source ${jdk.version} Skynet.java
- * @run main/othervm/timeout=300 --enable-preview -XX:+UnlockDiagnosticVMOptions
- *     -XX:+ZVerifyViews -XX:ZCollectionInterval=0.01 Skynet
+ * @run main/othervm/timeout=1600 -XX:+UnlockDiagnosticVMOptions
+ *     -XX:+UseZGC
+ *     -XX:+ZVerifyOops -XX:ZCollectionInterval=0.01 -Xmx1500m Skynet
  */
 
 import java.util.concurrent.BlockingQueue;
@@ -43,10 +42,9 @@ import java.util.concurrent.SynchronousQueue;
 import java.util.concurrent.ThreadFactory;
 
 public class Skynet {
-    public static final int ITERATIONS = 10;
-
     public static void main(String[] args) {
-        for (int i = 0; i < ITERATIONS; i++) {
+        int iterations = (args.length > 0) ? Integer.parseInt(args[0]) : 10;
+        for (int i = 0; i < iterations; i++) {
             skynet(1_000_000, 499999500000L);
         }
     }
@@ -61,7 +59,7 @@ public class Skynet {
         long end = System.currentTimeMillis();
         System.out.format("Result: %d in %s ms%n", sum, (end-start));
         if (sum != expected)
-            throw new AssertionError("unexpected result!");
+            throw new RuntimeException("Expected " + expected);
     }
 
     static void skynet(Channel<Long> result, int num, int size, int div) {

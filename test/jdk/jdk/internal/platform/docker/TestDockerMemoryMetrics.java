@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,12 +27,14 @@ import jdk.test.lib.containers.docker.Common;
 import jdk.test.lib.containers.docker.DockerRunOptions;
 import jdk.test.lib.containers.docker.DockerTestUtils;
 import jdk.test.lib.process.OutputAnalyzer;
+import jtreg.SkippedException;
 
 /*
  * @test
  * @key cgroups
  * @summary Test JDK Metrics class when running inside docker container
- * @requires docker.support
+ * @requires container.support
+ * @requires !vm.asan
  * @library /test/lib
  * @modules java.base/jdk.internal.platform
  * @build MetricsMemoryTester
@@ -43,9 +45,8 @@ public class TestDockerMemoryMetrics {
     private static final String imageName = Common.imageName("metrics-memory");
 
     public static void main(String[] args) throws Exception {
-        if (!DockerTestUtils.canTestDocker()) {
-            return;
-        }
+        DockerTestUtils.checkCanTestDocker();
+        DockerTestUtils.checkCanUseResourceLimits();
 
         // These tests create a docker image and run this image with
         // varying docker memory options.  The arguments passed to the docker
@@ -56,6 +57,8 @@ public class TestDockerMemoryMetrics {
         try {
             testMemoryLimit("200m");
             testMemoryLimit("1g");
+            // Memory limit test with additional cgroup fs mounted
+            testMemoryLimit("500m", true /* cgroup fs mount */);
 
             testMemoryAndSwapLimit("200m", "1g");
             testMemoryAndSwapLimit("100m", "200m");
@@ -73,18 +76,20 @@ public class TestDockerMemoryMetrics {
             }
             testOomKillFlag("100m", true);
 
-            testMemoryFailCount("64m");
+            testMemoryFailCount("128m");
 
             testMemorySoftLimit("500m","200m");
 
         } finally {
-            if (!DockerTestUtils.RETAIN_IMAGE_AFTER_TEST) {
-                DockerTestUtils.removeDockerImage(imageName);
-            }
+            DockerTestUtils.removeDockerImage(imageName);
         }
     }
 
     private static void testMemoryLimit(String value) throws Exception {
+        testMemoryLimit(value, false);
+    }
+
+    private static void testMemoryLimit(String value, boolean addCgroupMount) throws Exception {
         Common.logNewTestCase("testMemoryLimit, value = " + value);
         DockerRunOptions opts =
                 new DockerRunOptions(imageName, "/jdk/bin/java", "MetricsMemoryTester");
@@ -93,6 +98,10 @@ public class TestDockerMemoryMetrics {
                 .addJavaOpts("-cp", "/test-classes/")
                 .addJavaOpts("--add-exports", "java.base/jdk.internal.platform=ALL-UNNAMED")
                 .addClassOptions("memory", value);
+        if (addCgroupMount) {
+            // Extra cgroup mount should be ignored by product code
+            opts.addDockerOpts("--volume", "/sys/fs/cgroup:/cgroup-in:ro");
+        }
         DockerTestUtils.dockerRunJava(opts).shouldHaveExitValue(0).shouldContain("TEST PASSED!!!");
     }
 
@@ -101,18 +110,22 @@ public class TestDockerMemoryMetrics {
 
         // Check whether swapping really works for this test
         // On some systems there is no swap space enabled. And running
-        // 'java -Xms{mem-limit} -Xmx{mem-limit} -version' would fail due to swap space size being 0.
+        // 'java -Xms{mem-limit} -Xmx{mem-limit} -XX:+AlwaysPreTouch -version'
+        // would fail due to swap space size being 0. Note that when swap is
+        // properly enabled on the system the container gets the same amount
+        // of swap as is configured for memory. Thus, 2x{mem-limit} is the actual
+        // memory and swap bound for this pre-test.
         DockerRunOptions preOpts =
                 new DockerRunOptions(imageName, "/jdk/bin/java", "-version");
         preOpts.addDockerOpts("--volume", Utils.TEST_CLASSES + ":/test-classes/")
                 .addDockerOpts("--memory=" + value)
+                .addJavaOpts("-XX:+AlwaysPreTouch")
                 .addJavaOpts("-Xms" + value)
                 .addJavaOpts("-Xmx" + value);
         OutputAnalyzer oa = DockerTestUtils.dockerRunJava(preOpts);
         String output = oa.getOutput();
         if (!output.contains("version")) {
-            System.out.println("Swapping doesn't work for this test.");
-            return;
+            throw new SkippedException("Swapping doesn't work for this test.");
         }
 
         DockerRunOptions opts =
@@ -126,8 +139,7 @@ public class TestDockerMemoryMetrics {
         oa = DockerTestUtils.dockerRunJava(opts);
         output = oa.getOutput();
         if (output.contains("Ignoring test")) {
-            System.out.println("Ignored by the tester");
-            return;
+            throw new SkippedException("Ignored by the tester");
         }
         oa.shouldHaveExitValue(0).shouldContain("TEST PASSED!!!");
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -39,7 +39,10 @@ import java.util.List;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Flow;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.locks.ReentrantLock;
 
+import jdk.internal.net.http.HttpClientImpl.DelegatingExecutor;
 import jdk.internal.net.http.common.Demand;
 import jdk.internal.net.http.common.HttpBodySubscriberWrapper;
 import jdk.internal.net.http.common.Log;
@@ -61,17 +64,18 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
     private volatile Http1Response<T> response;
     final HttpConnection connection;
     final HttpClientImpl client;
-    final Executor executor;
+    final DelegatingExecutor executor;
     private final Http1AsyncReceiver asyncReceiver;
     private volatile boolean upgraded;
 
     /** Records a possible cancellation raised before any operation
      * has been initiated, or an error received while sending the request. */
-    private Throwable failed;
-    private final List<CompletableFuture<?>> operations; // used for cancel
+    private final AtomicReference<Throwable> failedRef = new AtomicReference<>();
+    private final ConcurrentLinkedDeque<CompletableFuture<?>> operations =
+            new ConcurrentLinkedDeque<>(); // used for cancel
 
     /** Must be held when operating on any internal state or data. */
-    private final Object lock = new Object();
+    private final ReentrantLock lock = new ReentrantLock();
 
     /** Holds the outgoing data, either the headers or a request body part. Or
      * an error from the request body publisher. At most there can be ~2 pieces
@@ -202,19 +206,35 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
      */
     static final class Http1ResponseBodySubscriber<U> extends HttpBodySubscriberWrapper<U> {
         final Http1Exchange<U> exchange;
-        Http1ResponseBodySubscriber(BodySubscriber<U> userSubscriber, Http1Exchange<U> exchange) {
+
+        private final boolean cancelTimerOnTermination;
+
+        Http1ResponseBodySubscriber(
+                BodySubscriber<U> userSubscriber,
+                boolean cancelTimerOnTermination,
+                Http1Exchange<U> exchange) {
             super(userSubscriber);
+            this.cancelTimerOnTermination = cancelTimerOnTermination;
             this.exchange = exchange;
         }
 
         @Override
-        protected void complete(Throwable t) {
-            try {
-                exchange.responseSubscriberCompleted(this);
-            } finally {
-                super.complete(t);
+        protected void register() {
+            exchange.registerResponseSubscriber(this);
+        }
+
+        @Override
+        protected void unregister() {
+            exchange.unregisterResponseSubscriber(this);
+        }
+
+        @Override
+        protected void onTermination() {
+            if (cancelTimerOnTermination) {
+                exchange.exchange.multi.cancelTimer();
             }
         }
+
     }
 
     @Override
@@ -233,14 +253,13 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
         this.request = exchange.request();
         this.client = exchange.client();
         this.executor = exchange.executor();
-        this.operations = new LinkedList<>();
         operations.add(headersSentCF);
         operations.add(bodySentCF);
         if (connection != null) {
             this.connection = connection;
         } else {
             InetSocketAddress addr = request.getAddress();
-            this.connection = HttpConnection.getConnection(addr, client, request, HTTP_1_1);
+            this.connection = HttpConnection.getConnection(addr, client, exchange, request, HTTP_1_1);
         }
         this.requestAction = new Http1Request(request, this);
         this.asyncReceiver = new Http1AsyncReceiver(executor, this);
@@ -253,7 +272,7 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
 
     private void connectFlows(HttpConnection connection) {
         FlowTube tube =  connection.getConnectionFlow();
-        if (debug.on()) debug.log("%s connecting flows", tube);
+        if (debug.on()) debug.log("%s connecting flows %s", tube, writePublisher);
 
         // Connect the flow to our Http1TubeSubscriber:
         //   asyncReceiver.subscriber().
@@ -264,23 +283,27 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
     // The Http1ResponseBodySubscriber is registered with the HttpClient
     // to ensure that it gets completed if the SelectorManager aborts due
     // to unexpected exceptions.
-    void registerResponseSubscriber(Http1ResponseBodySubscriber<T> subscriber) {
+    private boolean registerResponseSubscriber(Http1ResponseBodySubscriber<T> subscriber) {
         Throwable failed = null;
-        synchronized (lock) {
-            failed = this.failed;
+        lock.lock();
+        try {
+            failed = failedRef.get();
             if (failed == null) {
                 this.responseSubscriber = subscriber;
             }
+        } finally {
+            lock.unlock();
         }
         if (failed != null) {
             subscriber.onError(failed);
+            return false;
         } else {
-            client.registerSubscriber(subscriber);
+            return client.registerSubscriber(subscriber);
         }
     }
 
-    void responseSubscriberCompleted(HttpBodySubscriberWrapper<T> subscriber) {
-        client.subscriberCompleted(subscriber);
+    private boolean unregisterResponseSubscriber(Http1ResponseBodySubscriber<T> subscriber) {
+        return client.unregisterSubscriber(subscriber);
     }
 
     @Override
@@ -305,10 +328,13 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
             connectCF = connection.connectAsync(exchange)
                     .thenCompose(unused -> connection.finishConnect());
             Throwable cancelled;
-            synchronized (lock) {
-                if ((cancelled = failed) == null) {
+            lock.lock();
+            try {
+                if ((cancelled = failedRef.get()) == null) {
                     operations.add(connectCF);
                 }
+            } finally {
+                lock.unlock();
             }
             if (cancelled != null) {
                 if (client.isSelectorThread()) {
@@ -339,9 +365,7 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
 
                         if (debug.on()) debug.log("requestAction.headers");
                         List<ByteBuffer> data = requestAction.headers();
-                        synchronized (lock) {
-                            state = State.HEADERS;
-                        }
+                        switchState(State.HEADERS);
                         if (debug.on()) debug.log("setting outgoing with headers");
                         assert outgoing.isEmpty() : "Unexpected outgoing:" + outgoing;
                         appendToOutgoing(data);
@@ -351,7 +375,7 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
                         if (debug.on()) debug.log("Failed to send headers: %s", t);
                         headersSentCF.completeExceptionally(t);
                         bodySentCF.completeExceptionally(t);
-                        connection.close();
+                        connection.close(t);
                         cf.completeExceptionally(t);
                         return cf;
                     } })
@@ -407,10 +431,12 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
         if (debug.on()) debug.log("reading headers");
         CompletableFuture<Response> cf = response.readHeadersAsync(executor);
         Throwable cause;
-        synchronized (lock) {
+        lock.lock();
+        try {
             operations.add(cf);
-            cause = failed;
-            failed = null;
+            cause = failedRef.get();
+        } finally {
+            lock.unlock();
         }
 
         if (cause != null) {
@@ -447,11 +473,10 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
 
     @Override
     Http1ResponseBodySubscriber<T> createResponseSubscriber(BodyHandler<T> handler, ResponseInfo response) {
-        BodySubscriber<T> subscriber = handler.apply(response);
-        Http1ResponseBodySubscriber<T> bs =
-                new Http1ResponseBodySubscriber<T>(subscriber, this);
-        registerResponseSubscriber(bs);
-        return bs;
+        var cancelTimerOnTermination =
+                cancelTimerOnResponseBodySubscriberTermination(
+                        exchange.request().isWebSocket(), response.statusCode());
+        return new Http1ResponseBodySubscriber<>(handler.apply(response), cancelTimerOnTermination, this);
     }
 
     @Override
@@ -467,9 +492,12 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
 
 
     ByteBuffer drainLeftOverBytes() {
-        synchronized (lock) {
+        lock.lock();
+        try {
             asyncReceiver.stop();
             return asyncReceiver.drain(Utils.EMPTY_BYTEBUFFER);
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -502,16 +530,25 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
         cancelImpl(cause);
     }
 
+    @Override
+    void onProtocolError(final IOException cause) {
+        if (debug.on()) {
+            debug.log("cancelling exchange due to protocol error: %s", cause.getMessage());
+        }
+        Log.logError("cancelling exchange due to protocol error: {0}\n", cause);
+        cancelImpl(cause);
+    }
+
     private void cancelImpl(Throwable cause) {
         LinkedList<CompletableFuture<?>> toComplete = null;
         int count = 0;
-        Throwable error = null;
+        Throwable error;
         BodySubscriber<?> subscriber;
-        synchronized (lock) {
+        lock.lock();
+        try {
             subscriber = responseSubscriber;
-            if ((error = failed) == null) {
-                failed = error = cause;
-            }
+            failedRef.compareAndSet(null, cause);
+            error = failedRef.get();
             if (debug.on()) {
                 debug.log(request.uri() + ": " + error);
             }
@@ -540,6 +577,8 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
                 }
                 operations.clear();
             }
+        } finally {
+            lock.unlock();
         }
 
         // complete subscriber if needed
@@ -575,7 +614,7 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
             }
         } finally {
             if (!upgraded)
-                connection.close();
+                connection.close(error);
         }
     }
 
@@ -590,16 +629,12 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
 
     /** Returns true if this exchange was canceled. */
     boolean isCanceled() {
-        synchronized (lock) {
-            return failed != null;
-        }
+        return failedRef.get() != null;
     }
 
     /** Returns the cause for which this exchange was canceled, if available. */
     Throwable getCancelCause() {
-        synchronized (lock) {
-            return failed;
-        }
+        return failedRef.get();
     }
 
     /** Convenience for {@link #appendToOutgoing(DataPair)}, with just a Throwable. */
@@ -636,10 +671,9 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
     }
 
     private void cancelUpstreamSubscription() {
-        final Executor exec = client.theExecutor();
         if (debug.on()) debug.log("cancelling upstream publisher");
         if (bodySubscriber != null) {
-            exec.execute(bodySubscriber::cancelSubscription);
+            executor.execute(bodySubscriber::cancelSubscription);
         } else if (debug.on()) {
             debug.log("bodySubscriber is null");
         }
@@ -649,7 +683,7 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
     // ALL tasks should execute off the Selector-Manager thread
     /** Returns the next portion of the HTTP request, or the error. */
     private DataPair getOutgoing() {
-        final Executor exec = client.theExecutor();
+        final Executor exec = executor;
         final DataPair dp = outgoing.pollFirst();
 
         if (writePublisher.cancelled) {
@@ -663,31 +697,25 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
             return null;
 
         if (dp.throwable != null) {
-            synchronized (lock) {
-                state = State.ERROR;
-            }
+            switchState(State.ERROR);
             exec.execute(() -> {
                 headersSentCF.completeExceptionally(dp.throwable);
                 bodySentCF.completeExceptionally(dp.throwable);
-                connection.close();
+                connection.close(dp.throwable);
             });
             return dp;
         }
 
         switch (state) {
             case HEADERS:
-                synchronized (lock) {
-                    state = State.BODY;
-                }
+                switchState(State.BODY);
                 // completeAsync, since dependent tasks should run in another thread
                 if (debug.on()) debug.log("initiating completion of headersSentCF");
                 headersSentCF.completeAsync(() -> this, exec);
                 break;
             case BODY:
                 if (dp.data == Http1RequestBodySubscriber.COMPLETED) {
-                    synchronized (lock) {
-                        state = State.COMPLETING;
-                    }
+                    switchState(State.COMPLETING);
                     if (debug.on()) debug.log("initiating completion of bodySentCF");
                     bodySentCF.completeAsync(() -> this, exec);
                 } else {
@@ -703,6 +731,25 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
         }
 
         return dp;
+    }
+
+    State switchState(State newState) {
+        lock.lock();
+        try {
+            return state = newState;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    State switchAssertState(State expected, State newState) {
+        lock.lock();
+        try {
+            assert state == expected : "Unexpected state:" + state + ", expected: " + expected;
+            return state = newState;
+        } finally {
+            lock.unlock();
+        }
     }
 
     /** A Publisher of HTTP/1.1 headers and request body. */
@@ -767,7 +814,7 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
             @Override
             public void run() {
                 assert state != State.COMPLETED : "Unexpected state:" + state;
-                if (debug.on()) debug.log("WriteTask");
+                if (debug.on()) debug.log("WriteTask for " + request);
 
                 if (cancelled) {
                     if (debug.on()) debug.log("handling cancellation");
@@ -797,10 +844,7 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
                     } else {
                         List<ByteBuffer> data = dp.data;
                         if (data == Http1RequestBodySubscriber.COMPLETED) {
-                            synchronized (lock) {
-                                assert state == State.COMPLETING : "Unexpected state:" + state;
-                                state = State.COMPLETED;
-                            }
+                            switchAssertState(State.COMPLETING, State.COMPLETED);
                             if (debug.on())
                                 debug.log("completed, stopping %s", writeScheduler);
                             writeScheduler.stop();
@@ -830,16 +874,16 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
                 demand.increase(n);
                 if (debug.on())
                     debug.log("subscription request(%d), demand=%s", n, demand);
-                writeScheduler.runOrSchedule(client.theExecutor());
+                writeScheduler.runOrSchedule(executor);
             }
 
             @Override
             public void cancel() {
-                if (debug.on()) debug.log("subscription cancelled");
+                if (debug.on()) debug.log("subscription cancelled for " + request);
                 if (cancelled)
                     return;  //no-op
                 cancelled = true;
-                writeScheduler.runOrSchedule(client.theExecutor());
+                writeScheduler.runOrSchedule(executor);
             }
         }
     }
@@ -851,5 +895,15 @@ class Http1Exchange<T> extends ExchangeImpl<T> {
 
     String dbgString() {
         return "Http1Exchange";
+    }
+
+    @Override
+    void expectContinueFailed(int rcode) {
+        var response = this.response;
+        if (response != null) {
+            // Sets a flag which closes the connection locally when
+            // onFinished() is called
+            response.closeWhenFinished();
+        }
     }
 }

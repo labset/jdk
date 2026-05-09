@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -34,8 +34,13 @@ import java.util.Deque;
 import java.util.List;
 import java.util.function.Predicate;
 
+import jdk.jfr.EventType;
 import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingFile;
+import jdk.jfr.internal.consumer.JdkJfrConsumer;
+import jdk.jfr.internal.consumer.filter.ChunkWriter.RemovedEvents;
+import jdk.jfr.internal.util.UserDataException;
+import jdk.jfr.internal.util.UserSyntaxException;
 
 final class Scrub extends Command {
 
@@ -135,31 +140,57 @@ final class Scrub extends Command {
         }
         ensureUsableOutput(input, output);
 
+        try (RecordingFile rf = new RecordingFile(input)) {
+            List<EventType> types = rf.readEventTypes();
+            Predicate<RecordedEvent> filter = createFilter(options, types);
+            List<RemovedEvents> result = JdkJfrConsumer.instance().write(rf, output, filter);
+            println("Scrubbed recording file written to:");
+            println(output.toRealPath().toString());
+            if (result.isEmpty()) {
+                println("No events removed.");
+                return;
+            }
+            int maxName = 0;
+            int maxShare = 0;
+            for (RemovedEvents re : result) {
+                maxName = Math.max(maxName, re.getName().length());
+                maxShare = Math.max(maxShare, re.share().length());
+            }
+            println("Removed events:");
+            for (RemovedEvents re : result) {
+                printf("%-" + maxName + "s %" + maxShare + "s\n", re.getName(), re.share());
+            }
+        } catch (IOException ioe) {
+            couldNotReadError(input, ioe);
+        }
+    }
+
+    private Predicate<RecordedEvent> createFilter(Deque<String> options, List<EventType> types) throws UserSyntaxException, UserDataException {
         List<Predicate<RecordedEvent>> filters = new ArrayList<>();
         int optionCount = options.size();
         while (optionCount > 0) {
             if (acceptFilterOption(options, "--include-events")) {
                 String filter = options.remove();
                 warnForWildcardExpansion("--include-events", filter);
-                var f = Filters.createEventTypeFilter(filter);
+                var f = Filters.createEventTypeFilter(filter, types);
                 filters.add(Filters.fromEventType(f));
             }
             if (acceptFilterOption(options, "--exclude-events")) {
                 String filter = options.remove();
                 warnForWildcardExpansion("--exclude-events", filter);
-                var f = Filters.createEventTypeFilter(filter);
+                var f = Filters.createEventTypeFilter(filter, types);
                 filters.add(Filters.fromEventType(f.negate()));
             }
             if (acceptFilterOption(options, "--include-categories")) {
                 String filter = options.remove();
                 warnForWildcardExpansion("--include-categories", filter);
-                var f = Filters.createCategoryFilter(filter);
+                var f = Filters.createCategoryFilter(filter, types);
                 filters.add(Filters.fromEventType(f));
             }
             if (acceptFilterOption(options, "--exclude-categories")) {
                 String filter = options.remove();
                 warnForWildcardExpansion("--exclude-categories", filter);
-                var f = Filters.createCategoryFilter(filter);
+                var f = Filters.createCategoryFilter(filter, types);
                 filters.add(Filters.fromEventType(f.negate()));
             }
             if (acceptFilterOption(options, "--include-threads")) {
@@ -183,14 +214,7 @@ final class Scrub extends Command {
             }
             optionCount = options.size();
         }
-
-        try (RecordingFile rf = new RecordingFile(input)) {
-            rf.write(output, Filters.matchAny(filters));
-        } catch (IOException ioe) {
-            couldNotReadError(input, ioe);
-        }
-        println("Scrubbed recording file written to:");
-        println(output.toAbsolutePath().toString());
+        return Filters.matchAll(filters);
     }
 
     private void ensureUsableOutput(Path input, Path output) throws UserSyntaxException, UserDataException {

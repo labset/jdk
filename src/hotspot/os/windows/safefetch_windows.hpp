@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2022 SAP SE. All rights reserved.
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,12 +26,13 @@
 #ifndef OS_WINDOWS_SAFEFETCH_WINDOWS_HPP
 #define OS_WINDOWS_SAFEFETCH_WINDOWS_HPP
 
+#include "sanitizers/address.hpp"
 #include "utilities/globalDefinitions.hpp"
 
 // On windows, we use structured exception handling to implement SafeFetch
 
 template <class T>
-inline T SafeFetchXX(const T* adr, T errValue) {
+ATTRIBUTE_NO_ASAN inline T SafeFetchXX(const T* adr, T errValue) {
   T v = 0;
   __try {
     v = *adr;

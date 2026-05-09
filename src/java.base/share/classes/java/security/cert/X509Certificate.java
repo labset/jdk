@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,16 +25,15 @@
 
 package java.security.cert;
 
+import sun.security.util.SignatureUtil;
+import sun.security.x509.X509CertImpl;
+
+import javax.security.auth.x500.X500Principal;
 import java.math.BigInteger;
 import java.security.*;
-import java.security.spec.*;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
-import javax.security.auth.x500.X500Principal;
-
-import sun.security.x509.X509CertImpl;
-import sun.security.util.SignatureUtil;
 
 /**
  * <p>
@@ -96,6 +95,9 @@ import sun.security.util.SignatureUtil;
  * }
  * </pre>
  *
+ * @spec https://www.rfc-editor.org/info/rfc5280
+ *      RFC 5280: Internet X.509 Public Key Infrastructure Certificate
+ *              and Certificate Revocation List (CRL) Profile
  * @author Hemma Prafullchandra
  * @since 1.2
  *
@@ -105,8 +107,8 @@ import sun.security.util.SignatureUtil;
  * @see X509Extension
  */
 
-public abstract class X509Certificate extends Certificate
-implements X509Extension {
+public abstract non-sealed class X509Certificate extends Certificate
+    implements X509Extension, DEREncodable {
 
     @java.io.Serial
     private static final long serialVersionUID = -2491127588187038216L;
@@ -387,6 +389,11 @@ implements X509Extension {
      * relevant ASN.1 definitions.
      *
      * @return the signature algorithm OID string.
+     *
+     * @spec https://www.rfc-editor.org/info/rfc3279
+     *      RFC 3279: Algorithms and Identifiers for the Internet X.509
+     *              Public Key Infrastructure Certificate and Certificate
+     *              Revocation List (CRL) Profile
      */
     public abstract String getSigAlgOID();
 
@@ -615,6 +622,12 @@ implements X509Extension {
      * @return an immutable {@code Collection} of subject alternative
      * names (or {@code null})
      * @throws CertificateParsingException if the extension cannot be decoded
+     *
+     * @spec https://www.rfc-editor.org/info/rfc2253
+     *      RFC 2253: Lightweight Directory Access Protocol (v3):
+     *              UTF-8 String Representation of Distinguished Names
+     * @spec https://www.rfc-editor.org/info/rfc822
+     *      RFC 822: STANDARD FOR THE FORMAT OF ARPA INTERNET TEXT MESSAGES
      * @since 1.4
      */
     public Collection<List<?>> getSubjectAlternativeNames()
@@ -708,7 +721,7 @@ implements X509Extension {
         byte[] tbsCert = getTBSCertificate();
         sig.update(tbsCert, 0, tbsCert.length);
 
-        if (sig.verify(getSignature()) == false) {
+        if (!sig.verify(getSignature())) {
             throw new SignatureException("Signature does not match.");
         }
     }

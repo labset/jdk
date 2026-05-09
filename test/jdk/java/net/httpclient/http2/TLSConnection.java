@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,20 +35,20 @@ import java.net.http.HttpResponse.BodyHandlers;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
+import jdk.httpclient.test.lib.http2.Http2TestServer;
+import jdk.httpclient.test.lib.http2.Http2TestExchange;
+import jdk.httpclient.test.lib.http2.Http2Handler;
 
 /*
  * @test
- * @bug 8150769 8157107
- * @library server
+ * @bug 8150769 8157107 8371887
+ * @library /test/jdk/java/net/httpclient/lib
+ * @build jdk.httpclient.test.lib.http2.Http2TestServer
  * @summary Checks that SSL parameters can be set for HTTP/2 connection
- * @modules java.base/sun.net.www.http
- *          java.net.http/jdk.internal.net.http.common
- *          java.net.http/jdk.internal.net.http.frame
- *          java.net.http/jdk.internal.net.http.hpack
  * @run main/othervm
  *       -Djdk.internal.httpclient.debug=true
  *       -Djdk.httpclient.HttpClient.log=all
- *       TLSConnection
+ *       ${test.main.class}
  */
 public class TLSConnection {
 
@@ -134,6 +134,12 @@ public class TLSConnection {
             success &= checkProtocol(handler.getSSLSession(), "TLSv1.2");
             success &= checkCipherSuite(handler.getSSLSession(),
                     "TLS_RSA_WITH_AES_128_CBC_SHA");
+
+            success &= expectSuccess(
+                    "---\nTest #5: empty SSL parameters, "
+                            + "expect successful connection",
+                    () -> connect(uriString, new SSLParameters()));
+            success &= checkProtocol(handler.getSSLSession(), expectedTLSVersion(null));
 
             if (success) {
                 System.out.println("Test passed");

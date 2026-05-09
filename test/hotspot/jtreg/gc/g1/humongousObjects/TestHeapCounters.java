@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2022, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,7 +25,7 @@ package gc.g1.humongousObjects;
 
 import gc.testlibrary.Helpers;
 import jdk.test.lib.Asserts;
-import sun.hotspot.WhiteBox;
+import jdk.test.whitebox.WhiteBox;
 
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
@@ -40,18 +40,18 @@ import java.util.List;
  * @library /test/lib /
  * @modules java.base/jdk.internal.misc
  * @modules java.management
- * @build sun.hotspot.WhiteBox
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  *
  * @run main/othervm -XX:+UseG1GC -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:.
  *                   -Xmx128m -Xms128m
- *                   -XX:G1HeapRegionSize=1M -XX:InitiatingHeapOccupancyPercent=100 -XX:-G1UseAdaptiveIHOP
+ *                   -XX:G1HeapRegionSize=1M -XX:G1IHOP=100 -XX:-G1UseAdaptiveIHOP
  *                   -Xlog:gc -Xlog:gc:file=TestHeapCountersRuntime.gc.log
  *                    gc.g1.humongousObjects.TestHeapCounters RUNTIME_COUNTER
  *
  * @run main/othervm -XX:+UseG1GC -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:.
  *                   -Xmx128m -Xms128m
- *                   -XX:G1HeapRegionSize=1M -XX:InitiatingHeapOccupancyPercent=100 -XX:-G1UseAdaptiveIHOP
+ *                   -XX:G1HeapRegionSize=1M -XX:G1IHOP=100 -XX:-G1UseAdaptiveIHOP
  *                   -Xlog:gc -Xlog:gc:file=TestHeapCountersMXBean.gc.log
  *                    gc.g1.humongousObjects.TestHeapCounters MX_BEAN_COUNTER
  */

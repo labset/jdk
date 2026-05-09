@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,7 +26,7 @@ import java.util.Random;
 
 /**
  * @test
- * @bug 8251871 8285301
+ * @bug 8251871 8285301 8355574
  * @summary Optimize arrayCopy using AVX-512 masked instructions.
  *
  * @run main/othervm/timeout=600 -XX:-TieredCompilation -Xbatch -XX:+IgnoreUnrecognizedVMOptions
@@ -37,6 +37,9 @@ import java.util.Random;
  *      compiler.arraycopy.TestArrayCopyConjoint
  * @run main/othervm/timeout=600 -XX:-TieredCompilation -Xbatch -XX:+IgnoreUnrecognizedVMOptions
  *      -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions -XX:ArrayOperationPartialInlineSize=32 -XX:+UnlockDiagnosticVMOptions -XX:MaxVectorSize=32 -XX:+UnlockDiagnosticVMOption
+ *      compiler.arraycopy.TestArrayCopyConjoint
+ * @run main/othervm/timeout=600 -XX:-TieredCompilation -Xbatch -XX:+IgnoreUnrecognizedVMOptions -XX:+UnlockDiagnosticVMOptions -XX:+StressGCM -XX:VerifyConstraintCasts=2
+ *      -XX:UseAVX=3 -XX:ArrayOperationPartialInlineSize=32 -XX:MaxVectorSize=32
  *      compiler.arraycopy.TestArrayCopyConjoint
  * @run main/othervm/timeout=600 -XX:-TieredCompilation -Xbatch -XX:+IgnoreUnrecognizedVMOptions
  *      -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions -XX:ArrayOperationPartialInlineSize=32 -XX:+UnlockDiagnosticVMOptions -XX:MaxVectorSize=64
@@ -49,8 +52,6 @@ import java.util.Random;
  *      compiler.arraycopy.TestArrayCopyConjoint
  * @run main/othervm/timeout=600 -XX:-TieredCompilation -Xbatch -XX:+IgnoreUnrecognizedVMOptions
  *      -XX:UseAVX=3 -XX:+UnlockDiagnosticVMOptions -XX:ArrayOperationPartialInlineSize=64 -XX:MaxVectorSize=64 -XX:ArrayCopyLoadStoreMaxElem=16
- *      compiler.arraycopy.TestArrayCopyConjoint
- * @run main/othervm/timeout=600 -XX:-TieredCompilation -Xbatch -XX:+UnlockExperimentalVMOptions -XX:+AlwaysAtomicAccesses
  *      compiler.arraycopy.TestArrayCopyConjoint
  *
  */
@@ -232,8 +233,7 @@ public class TestArrayCopyConjoint {
 
       setup();
 
-      try {
-        for (int i = 0 ; i < 1000000 ; i++ ) {
+      for (int i = 0 ; i < 30_000 ; i++ ) {
           int index = r.nextInt(2048);
           testByte(lengths[i % lengths.length], index , index+2);
           reinit(byte.class);
@@ -262,10 +262,6 @@ public class TestArrayCopyConjoint {
           reinit(long.class);
           testLong_constant_LT64B (index , index+2);
           reinit(long.class);
-        }
-        System.out.println("PASS : " + validate_ctr);
-      } catch (Exception e) {
-        System.out.println(e.getMessage());
       }
     }
 }

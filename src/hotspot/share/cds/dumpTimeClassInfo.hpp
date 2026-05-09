@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,11 +22,13 @@
  *
  */
 
-#ifndef SHARED_CDS_DUMPTIMESHAREDCLASSINFO_HPP
-#define SHARED_CDS_DUMPTIMESHAREDCLASSINFO_HPP
+#ifndef SHARE_CDS_DUMPTIMECLASSINFO_HPP
+#define SHARE_CDS_DUMPTIMECLASSINFO_HPP
+
+#include "cds/aotMetaspace.hpp"
 #include "cds/archiveBuilder.hpp"
 #include "cds/archiveUtils.hpp"
-#include "cds/metaspaceShared.hpp"
+#include "cds/cdsConfig.hpp"
 #include "classfile/compactHashtable.hpp"
 #include "memory/metaspaceClosure.hpp"
 #include "oops/instanceKlass.hpp"
@@ -37,39 +39,90 @@ class Method;
 class Symbol;
 
 class DumpTimeClassInfo: public CHeapObj<mtClass> {
-  bool                         _excluded;
-  bool                         _is_early_klass;
-  bool                         _has_checked_exclusion;
-public:
-  struct DTLoaderConstraint {
+  bool _excluded;
+  bool _is_aot_tooling_class;
+  bool _has_checked_exclusion;
+
+  class DTLoaderConstraint {
     Symbol* _name;
     char _loader_type1;
     char _loader_type2;
+  public:
+    DTLoaderConstraint() : _name(nullptr), _loader_type1('0'), _loader_type2('0') {}
     DTLoaderConstraint(Symbol* name, char l1, char l2) : _name(name), _loader_type1(l1), _loader_type2(l2) {
-      _name->increment_refcount();
+      Symbol::maybe_increment_refcount(_name);
     }
-    DTLoaderConstraint() : _name(NULL), _loader_type1('0'), _loader_type2('0') {}
+    DTLoaderConstraint(const DTLoaderConstraint& src) {
+      _name = src._name;
+      _loader_type1 = src._loader_type1;
+      _loader_type2 = src._loader_type2;
+      Symbol::maybe_increment_refcount(_name);
+    }
+    DTLoaderConstraint& operator=(DTLoaderConstraint src) {
+      swap(_name, src._name); // c++ copy-and-swap idiom
+      _loader_type1 = src._loader_type1;
+      _loader_type2 = src._loader_type2;
+      return *this;
+    }
+    ~DTLoaderConstraint() {
+      Symbol::maybe_decrement_refcount(_name);
+    }
+
     bool equals(const DTLoaderConstraint& t) {
       return t._name == _name &&
              ((t._loader_type1 == _loader_type1 && t._loader_type2 == _loader_type2) ||
               (t._loader_type2 == _loader_type1 && t._loader_type1 == _loader_type2));
     }
+    void metaspace_pointers_do(MetaspaceClosure* it) {
+      it->push(&_name);
+    }
+
+    Symbol* name()      { return _name;         }
+    char loader_type1() { return _loader_type1; }
+    char loader_type2() { return _loader_type2; }
   };
 
-  struct DTVerifierConstraint {
+  class DTVerifierConstraint {
     Symbol* _name;
     Symbol* _from_name;
-    DTVerifierConstraint() : _name(NULL), _from_name(NULL) {}
-    DTVerifierConstraint(Symbol* n, Symbol* fn) : _name(n), _from_name(fn) {
-      _name->increment_refcount();
-      _from_name->increment_refcount();
+  public:
+    DTVerifierConstraint() : _name(nullptr), _from_name(nullptr) {}
+    DTVerifierConstraint(Symbol* n, Symbol* fn = nullptr) : _name(n), _from_name(fn) {
+      Symbol::maybe_increment_refcount(_name);
+      Symbol::maybe_increment_refcount(_from_name);
     }
+    DTVerifierConstraint(const DTVerifierConstraint& src) {
+      _name = src._name;
+      _from_name = src._from_name;
+      Symbol::maybe_increment_refcount(_name);
+      Symbol::maybe_increment_refcount(_from_name);
+    }
+    DTVerifierConstraint& operator=(DTVerifierConstraint src) {
+      swap(_name, src._name); // c++ copy-and-swap idiom
+      swap(_from_name, src._from_name); // c++ copy-and-swap idiom
+      return *this;
+    }
+    ~DTVerifierConstraint() {
+      Symbol::maybe_decrement_refcount(_name);
+      Symbol::maybe_decrement_refcount(_from_name);
+    }
+    bool equals(Symbol* n, Symbol* fn) {
+      return (_name == n) && (_from_name == fn);
+    }
+    void metaspace_pointers_do(MetaspaceClosure* it) {
+      it->push(&_name);
+      it->push(&_from_name);
+    }
+
+    Symbol* name()      { return _name;      }
+    Symbol* from_name() { return _from_name; }
   };
 
+public:
   InstanceKlass*               _klass;
   InstanceKlass*               _nest_host;
   bool                         _failed_verification;
-  bool                         _is_archived_lambda_proxy;
+  bool                         _is_registered_lambda_proxy;
   int                          _id;
   int                          _clsfile_size;
   int                          _clsfile_crc32;
@@ -79,24 +132,27 @@ public:
   GrowableArray<int>*                  _enum_klass_static_fields;
 
   DumpTimeClassInfo() {
-    _klass = NULL;
-    _nest_host = NULL;
+    _klass = nullptr;
+    _nest_host = nullptr;
     _failed_verification = false;
-    _is_archived_lambda_proxy = false;
+    _is_registered_lambda_proxy = false;
     _has_checked_exclusion = false;
     _id = -1;
     _clsfile_size = -1;
     _clsfile_crc32 = -1;
     _excluded = false;
-    _is_early_klass = JvmtiExport::is_early_phase();
-    _verifier_constraints = NULL;
-    _verifier_constraint_flags = NULL;
-    _loader_constraints = NULL;
-    _enum_klass_static_fields = NULL;
+    _is_aot_tooling_class = false;
+    _verifier_constraints = nullptr;
+    _verifier_constraint_flags = nullptr;
+    _loader_constraints = nullptr;
+    _enum_klass_static_fields = nullptr;
   }
+  DumpTimeClassInfo& operator=(const DumpTimeClassInfo&) = delete;
+  ~DumpTimeClassInfo();
 
-  void add_verification_constraint(InstanceKlass* k, Symbol* name,
-         Symbol* from_name, bool from_field_is_protected, bool from_is_array, bool from_is_object);
+  // For old verifier: only name is saved; all other fields are null/false.
+  void add_verification_constraint(Symbol* name,
+         Symbol* from_name = nullptr, bool from_field_is_protected = false, bool from_is_array = false, bool from_is_object = false);
   void record_linking_constraint(Symbol* name, Handle loader1, Handle loader2);
   void add_enum_klass_static_field(int archived_heap_root_index);
   int  enum_klass_static_field(int which_field);
@@ -105,7 +161,7 @@ public:
 private:
   template <typename T>
   static int array_length_or_zero(GrowableArray<T>* array) {
-    if (array == NULL) {
+    if (array == nullptr) {
       return 0;
     } else {
       return array->length();
@@ -116,6 +172,14 @@ public:
 
   int num_verifier_constraints() const {
     return array_length_or_zero(_verifier_constraint_flags);
+  }
+
+  Symbol* verifier_constraint_name_at(int i) const {
+    return _verifier_constraints->at(i).name();
+  }
+
+  Symbol* verifier_constraint_from_name_at(int i) const {
+    return _verifier_constraints->at(i).from_name();
   }
 
   int num_loader_constraints() const {
@@ -129,17 +193,14 @@ public:
   void metaspace_pointers_do(MetaspaceClosure* it) {
     it->push(&_klass);
     it->push(&_nest_host);
-    if (_verifier_constraints != NULL) {
+    if (_verifier_constraints != nullptr) {
       for (int i = 0; i < _verifier_constraints->length(); i++) {
-        DTVerifierConstraint* cons = _verifier_constraints->adr_at(i);
-        it->push(&cons->_name);
-        it->push(&cons->_from_name);
+        _verifier_constraints->adr_at(i)->metaspace_pointers_do(it);
       }
     }
-    if (_loader_constraints != NULL) {
+    if (_loader_constraints != nullptr) {
       for (int i = 0; i < _loader_constraints->length(); i++) {
-        DTLoaderConstraint* lc = _loader_constraints->adr_at(i);
-        it->push(&lc->_name);
+        _loader_constraints->adr_at(i)->metaspace_pointers_do(it);
       }
     }
   }
@@ -148,9 +209,12 @@ public:
     return _excluded || _failed_verification;
   }
 
-  // Was this class loaded while JvmtiExport::is_early_phase()==true
-  bool is_early_klass() {
-    return _is_early_klass;
+  bool is_aot_tooling_class() {
+    return _is_aot_tooling_class;
+  }
+
+  void set_is_aot_tooling_class() {
+    _is_aot_tooling_class = true;
   }
 
   // simple accessors
@@ -162,15 +226,14 @@ public:
   InstanceKlass* nest_host() const                  { return _nest_host; }
   void set_nest_host(InstanceKlass* nest_host)      { _nest_host = nest_host; }
 
-  DumpTimeClassInfo clone();
   size_t runtime_info_bytesize() const;
 };
 
 template <typename T>
 inline unsigned DumpTimeSharedClassTable_hash(T* const& k) {
-  if (DumpSharedSpaces) {
+  if (CDSConfig::is_dumping_static_archive()) {
     // Deterministic archive contents
-    uintx delta = k->name() - MetaspaceShared::symbol_rs_base();
+    uintx delta = k->name() - AOTMetaspace::symbol_rs_base();
     return primitive_hash<uintx>(delta);
   } else {
     // Deterministic archive is not possible because classes can be loaded
@@ -179,11 +242,11 @@ inline unsigned DumpTimeSharedClassTable_hash(T* const& k) {
   }
 }
 
-using DumpTimeSharedClassTableBaseType = ResourceHashtable<
+using DumpTimeSharedClassTableBaseType = HashTable<
   InstanceKlass*,
   DumpTimeClassInfo,
   15889, // prime number
-  ResourceObj::C_HEAP,
+  AnyObj::C_HEAP,
   mtClassShared,
   &DumpTimeSharedClassTable_hash>;
 
@@ -196,7 +259,8 @@ public:
     _builtin_count = 0;
     _unregistered_count = 0;
   }
-  DumpTimeClassInfo* find_or_allocate_info_for(InstanceKlass* k, bool dump_in_progress);
+  DumpTimeClassInfo* allocate_info(InstanceKlass* k);
+  DumpTimeClassInfo* get_info(InstanceKlass* k);
   void inc_builtin_count()      { _builtin_count++; }
   void inc_unregistered_count() { _unregistered_count++; }
   void update_counts();
@@ -221,4 +285,4 @@ private:
   template<typename Function> void iterate_all(Function function) const;
 };
 
-#endif // SHARED_CDS_DUMPTIMESHAREDCLASSINFO_HPP
+#endif // SHARE_CDS_DUMPTIMECLASSINFO_HPP

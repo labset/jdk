@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -51,10 +51,10 @@ final class ProviderVerifier {
     private CryptoPermissions appPerms = null;
 
     /**
-     * Creates a ProviderVerifier object to verify the given URL.
+     * Creates a {@code ProviderVerifier} object to verify the given URL.
      *
      * @param jarURL the JAR file to be verified.
-     * @param savePerms if true, save the permissions allowed by the
+     * @param savePerms if {@code true}, save the permissions allowed by the
      *          exemption mechanism
      */
     ProviderVerifier(URL jarURL, boolean savePerms) {
@@ -62,11 +62,11 @@ final class ProviderVerifier {
     }
 
     /**
-     * Creates a ProviderVerifier object to verify the given URL.
+     * Creates a {@code ProviderVerifier} object to verify the given URL.
      *
      * @param jarURL the JAR file to be verified
      * @param provider the corresponding provider.
-     * @param savePerms if true, save the permissions allowed by the
+     * @param savePerms if {@code true}, save the permissions allowed by the
      *          exemption mechanism
      */
     ProviderVerifier(URL jarURL, Provider provider, boolean savePerms) {
@@ -91,6 +91,7 @@ final class ProviderVerifier {
         // If the protocol of jarURL isn't "jar", we should
         // construct a JAR URL so we can open a JarURLConnection
         // for verifying this provider.
+        @SuppressWarnings("deprecation")
         final URL url = jarURL.getProtocol().equalsIgnoreCase("jar")?
                         jarURL : new URL("jar:" + jarURL + "!/");
 
@@ -99,20 +100,12 @@ final class ProviderVerifier {
 
             // Get a link to the Jarfile to search.
             try {
-                @SuppressWarnings("removal")
-                var tmp = AccessController.doPrivileged(
-                        (PrivilegedExceptionAction<JarFile>) () -> {
-                            JarURLConnection conn =
-                                (JarURLConnection) url.openConnection();
-                            // You could do some caching here as
-                            // an optimization.
-                            conn.setUseCaches(false);
-                            return conn.getJarFile();
-                        });
-                jf = tmp;
-            } catch (java.security.PrivilegedActionException pae) {
-                throw new SecurityException("Cannot load " + url,
-                    pae.getCause());
+                JarURLConnection conn = (JarURLConnection) url.openConnection();
+                // You could do some caching here as an optimization.
+                conn.setUseCaches(false);
+                jf = conn.getJarFile();
+            } catch (IOException ioe) {
+                throw new SecurityException("Cannot load " + url, ioe);
             }
 
             if (jf != null) {
@@ -154,7 +147,7 @@ final class ProviderVerifier {
     }
 
     /**
-     * Returns true if the given provider is JDK trusted crypto provider
+     * Returns {@code true} if the given provider is JDK trusted crypto provider
      * if the implementation supports fast-path verification.
      */
     static boolean isTrustedCryptoProvider(Provider provider) {
@@ -165,8 +158,9 @@ final class ProviderVerifier {
      * Returns the permissions which are bundled with the JAR file,
      * aka the "cryptoperms" file.
      *
-     * NOTE: if this ProviderVerifier instance is constructed with "savePerms"
-     * equal to false, then this method would always return null.
+     * NOTE: if this {@code ProviderVerifier} instance is constructed
+     * with "savePerms" equal to {@code false}, then this method would always
+     * return {@code null}.
      */
     CryptoPermissions getPermissions() {
         return appPerms;

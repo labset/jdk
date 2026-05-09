@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2018, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -40,6 +40,11 @@ import jdk.jfr.internal.jfc.JFC;
 
 /**
  * A collection of settings and metadata describing the configuration.
+ * <p>
+ * The following example shows how the {@code Configuration} class can be used
+ * to list available configurations and how to pass a configuration object to a
+ * {@code Recording}.
+ * {@snippet class = "Snippets" region = "ConfigurationxsOverview"}
  *
  * @since 9
  */
@@ -62,7 +67,7 @@ public final class Configuration {
     }
 
     /**
-     * Returns the settings that specifies how a recording is configured.
+     * Returns the settings that specify how a recording is configured.
      * <p>
      * Modifying the returned {@code Map} object doesn't change the
      * configuration.
@@ -131,11 +136,8 @@ public final class Configuration {
      * @return the read {@link Configuration}, not {@code null}
      * @throws ParseException if the file can't be parsed
      * @throws IOException if the file can't be read
-     * @throws SecurityException if a security manager exists and its
-     *         {@code checkRead} method denies read access to the file.
      *
      * @see java.io.File#getPath()
-     * @see java.lang.SecurityManager#checkRead(java.lang.String)
      */
     public static Configuration create(Path path) throws IOException, ParseException {
         Objects.requireNonNull(path, "path");

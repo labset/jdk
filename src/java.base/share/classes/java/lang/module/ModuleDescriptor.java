@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2009, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,6 +29,7 @@ import java.io.InputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.lang.reflect.AccessFlag;
 import java.nio.ByteBuffer;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -53,6 +54,7 @@ import static java.util.Objects.*;
 
 import jdk.internal.module.Checks;
 import jdk.internal.module.ModuleInfo;
+import jdk.internal.vm.annotation.AOTSafeClassInitializer;
 
 
 /**
@@ -90,7 +92,8 @@ import jdk.internal.module.ModuleInfo;
  * @since 9
  */
 
-public class ModuleDescriptor
+@AOTSafeClassInitializer
+public final class ModuleDescriptor
     implements Comparable<ModuleDescriptor>
 {
 
@@ -105,7 +108,7 @@ public class ModuleDescriptor
          * An open module. An open module does not declare any open packages
          * but the resulting module is treated as if all packages are open.
          */
-        OPEN,
+        OPEN(AccessFlag.OPEN.mask()),
 
         /**
          * An automatic module. An automatic module is treated as if it exports
@@ -114,19 +117,24 @@ public class ModuleDescriptor
          * @apiNote This modifier does not correspond to a module flag in the
          * binary form of a module declaration ({@code module-info.class}).
          */
-        AUTOMATIC,
+        AUTOMATIC(0 /* no flag per above comment */),
 
         /**
          * The module was not explicitly or implicitly declared.
          */
-        SYNTHETIC,
+        SYNTHETIC(AccessFlag.SYNTHETIC.mask()),
 
         /**
          * The module was implicitly declared.
          */
-        MANDATED;
-    }
+        MANDATED(AccessFlag.MANDATED.mask());
 
+        private final int mask;
+        private Modifier(int mask) {
+            this.mask = mask;
+        }
+        private int mask() {return mask;}
+    }
 
     /**
      * <p> A dependence upon a module. </p>
@@ -152,28 +160,31 @@ public class ModuleDescriptor
              * module</i> to have an implicitly declared dependence on the module
              * named by the {@code Requires}.
              */
-            TRANSITIVE,
+            TRANSITIVE(AccessFlag.TRANSITIVE.mask()),
 
             /**
              * The dependence is mandatory in the static phase, during compilation,
              * but is optional in the dynamic phase, during execution.
              */
-            STATIC,
+            STATIC(AccessFlag.STATIC_PHASE.mask()),
 
             /**
              * The dependence was not explicitly or implicitly declared in the
              * source of the module declaration.
              */
-            SYNTHETIC,
+            SYNTHETIC(AccessFlag.SYNTHETIC.mask()),
 
             /**
              * The dependence was implicitly declared in the source of the module
              * declaration.
              */
-            MANDATED;
-
+            MANDATED(AccessFlag.MANDATED.mask());
+            private final int mask;
+            private Modifier(int mask) {
+                this.mask = mask;
+            }
+            private int mask() {return mask;}
         }
-
         private final Set<Modifier> mods;
         private final String name;
         private final Version compiledVersion;
@@ -201,6 +212,23 @@ public class ModuleDescriptor
          */
         public Set<Modifier> modifiers() {
             return mods;
+        }
+
+        /**
+         * Returns the set of the module {@linkplain AccessFlag
+         * requires flags}.
+         *
+         * @return A possibly-empty unmodifiable set of requires flags
+         * @see #modifiers()
+         * @jvms 4.7.25 The Module Attribute
+         * @since 20
+         */
+        public Set<AccessFlag> accessFlags() {
+            int mask = 0;
+            for (var modifier : mods) {
+                mask |= modifier.mask();
+            }
+            return AccessFlag.maskToAccessFlags(mask, AccessFlag.Location.MODULE_REQUIRES);
         }
 
         /**
@@ -376,14 +404,19 @@ public class ModuleDescriptor
              * The export was not explicitly or implicitly declared in the
              * source of the module declaration.
              */
-            SYNTHETIC,
+            SYNTHETIC(AccessFlag.SYNTHETIC.mask()),
 
             /**
              * The export was implicitly declared in the source of the module
              * declaration.
              */
-            MANDATED;
+            MANDATED(AccessFlag.MANDATED.mask());
 
+            private final int mask;
+            private Modifier(int mask) {
+                this.mask = mask;
+            }
+            private int mask() {return mask;}
         }
 
         private final Set<Modifier> mods;
@@ -415,6 +448,23 @@ public class ModuleDescriptor
          */
         public Set<Modifier> modifiers() {
             return mods;
+        }
+
+        /**
+         * Returns the set of the module {@linkplain AccessFlag
+         * export flags} for this module descriptor.
+         *
+         * @return A possibly-empty unmodifiable set of export flags
+         * @see #modifiers()
+         * @jvms 4.7.25 The Module Attribute
+         * @since 20
+         */
+        public Set<AccessFlag> accessFlags() {
+            int mask = 0;
+            for (var modifier : mods) {
+                mask |= modifier.mask();
+            }
+            return AccessFlag.maskToAccessFlags(mask, AccessFlag.Location.MODULE_EXPORTS);
         }
 
         /**
@@ -579,14 +629,18 @@ public class ModuleDescriptor
              * The open package was not explicitly or implicitly declared in
              * the source of the module declaration.
              */
-            SYNTHETIC,
+            SYNTHETIC(AccessFlag.SYNTHETIC.mask()),
 
             /**
              * The open package was implicitly declared in the source of the
              * module declaration.
              */
-            MANDATED;
-
+            MANDATED(AccessFlag.MANDATED.mask());
+            private final int mask;
+            private Modifier(int mask) {
+                this.mask = mask;
+            }
+            private int mask() {return mask;}
         }
 
         private final Set<Modifier> mods;
@@ -618,6 +672,23 @@ public class ModuleDescriptor
          */
         public Set<Modifier> modifiers() {
             return mods;
+        }
+
+        /**
+         * Returns the set of the module {@linkplain AccessFlag opens
+         * flags}.
+         *
+         * @return A possibly-empty unmodifiable set of opens flags
+         * @see #modifiers()
+         * @jvms 4.7.25 The Module Attribute
+         * @since 20
+         */
+        public Set<AccessFlag> accessFlags() {
+            int mask = 0;
+            for (var modifier : mods) {
+                mask |= modifier.mask();
+            }
+            return AccessFlag.maskToAccessFlags(mask, AccessFlag.Location.MODULE_OPENS);
         }
 
         /**
@@ -778,26 +849,25 @@ public class ModuleDescriptor
         }
 
         /**
-         * Returns the fully qualified class name of the service type.
-         *
-         * @return The fully qualified class name of the service type
+         * {@return the {@linkplain ClassLoader##binary-name binary name} of the service type}
          */
         public String service() { return service; }
 
         /**
-         * Returns the list of the fully qualified class names of the providers
-         * or provider factories.
+         * Returns the list of the {@linkplain ClassLoader##binary-name binary names}
+         * of the providers or provider factories.
          *
-         * @return A non-empty and unmodifiable list of the fully qualified class
-         *         names of the providers or provider factories
+         * @return A non-empty and unmodifiable list of the {@linkplain ClassLoader##binary-name
+         *         binary names} of the providers or provider factories
          */
         public List<String> providers() { return providers; }
 
         /**
          * Compares this {@code Provides} to another.
          *
-         * <p> Two {@code Provides} objects are compared by comparing the fully
-         * qualified class name of the service type lexicographically. Where the
+         * <p> Two {@code Provides} objects are compared by comparing the
+         * {@linkplain ClassLoader##binary-name binary name}
+         * of the service type lexicographically. Where the
          * class names are equal then the list of the provider class names are
          * compared by comparing the corresponding elements of both lists
          * lexicographically and in sequence. Where the lists differ in size,
@@ -1244,18 +1314,18 @@ public class ModuleDescriptor
      * Creates a module descriptor from its components.
      * The arguments are pre-validated and sets are unmodifiable sets.
      */
-    ModuleDescriptor(String name,
-                     Version version,
-                     Set<Modifier> modifiers,
-                     Set<Requires> requires,
-                     Set<Exports> exports,
-                     Set<Opens> opens,
-                     Set<String> uses,
-                     Set<Provides> provides,
-                     Set<String> packages,
-                     String mainClass,
-                     int hashCode,
-                     boolean unused) {
+    private ModuleDescriptor(String name,
+                             Version version,
+                             Set<Modifier> modifiers,
+                             Set<Requires> requires,
+                             Set<Exports> exports,
+                             Set<Opens> opens,
+                             Set<String> uses,
+                             Set<Provides> provides,
+                             Set<String> packages,
+                             String mainClass,
+                             int hashCode,
+                             boolean unused) {
         this.name = name;
         this.version = version;
         this.rawVersionString = null;
@@ -1288,6 +1358,22 @@ public class ModuleDescriptor
      */
     public Set<Modifier> modifiers() {
         return modifiers;
+    }
+
+    /**
+     * Returns the set of the {@linkplain AccessFlag module flags}.
+     *
+     * @return A possibly-empty unmodifiable set of module flags
+     * @see #modifiers()
+     * @jvms 4.7.25 The Module Attribute
+     * @since 20
+     */
+    public Set<AccessFlag> accessFlags() {
+        int mask = 0;
+        for (var modifier : modifiers) {
+            mask |= modifier.mask();
+        }
+        return AccessFlag.maskToAccessFlags(mask, AccessFlag.Location.MODULE);
     }
 
     /**
@@ -1361,8 +1447,8 @@ public class ModuleDescriptor
      * <p> If this module is an automatic module then the set of service
      * dependences is empty. </p>
      *
-     * @return  A possibly-empty unmodifiable set of the fully qualified class
-     *          names of the service types used
+     * @return  A possibly-empty unmodifiable set of the {@linkplain ClassLoader##binary-name
+     *          binary names} of the service types used
      */
     public Set<String> uses() {
         return uses;
@@ -1425,18 +1511,14 @@ public class ModuleDescriptor
     /**
      * <p> Returns the module main class. </p>
      *
-     * @return The fully qualified class name of the module's main class
+     * @return The {@linkplain ClassLoader##binary-name binary name} of the module's main class
      */
     public Optional<String> mainClass() {
         return Optional.ofNullable(mainClass);
     }
 
     /**
-     * Returns the set of packages in the module.
-     *
-     * <p> The set of packages includes all exported and open packages, as well
-     * as the packages of any service providers, and the package for the main
-     * class. </p>
+     * Returns the set of all packages in the module.
      *
      * @return A possibly-empty unmodifiable set of the packages in the module
      */
@@ -1936,7 +2018,7 @@ public class ModuleDescriptor
 
         /**
          * Provides a service with one or more implementations. The package for
-         * each {@link Provides#providers provider} (or provider factory) is
+         * each {@link Provides#providers() provider} (or provider factory) is
          * added to the module if not already added.
          *
          * @param  p
@@ -2549,7 +2631,7 @@ public class ModuleDescriptor
     private static int modsHashCode(Iterable<? extends Enum<?>> enums) {
         int h = 0;
         for (Enum<?> e : enums) {
-            h = h * 43 + Objects.hashCode(e.name());
+            h += e.name().hashCode();
         }
         return h;
     }

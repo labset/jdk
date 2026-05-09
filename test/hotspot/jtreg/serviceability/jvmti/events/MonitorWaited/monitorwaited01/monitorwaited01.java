@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,9 +23,6 @@
 
 import jdk.test.lib.jvmti.DebugeeClass;
 
-import java.io.PrintStream;
-
-
 /*
  * @test
  *
@@ -44,10 +41,11 @@ import java.io.PrintStream;
  *       and save JNIEnv pointer now passed as argument.
  *
  * @requires vm.continuations
+ * @requires test.thread.factory == null
  * @library /test/lib
- * @compile --enable-preview -source ${jdk.version} monitorwaited01.java
- * @run main/othervm/native --enable-preview -agentlib:monitorwaited01 monitorwaited01 platform
- * @run main/othervm/native --enable-preview -agentlib:monitorwaited01 monitorwaited01 virtual
+ * @compile monitorwaited01.java
+ * @run main/othervm/native -agentlib:monitorwaited01 monitorwaited01 platform
+ * @run main/othervm/native -agentlib:monitorwaited01 monitorwaited01 virtual
  */
 
 

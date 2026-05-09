@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -22,47 +22,57 @@
  *
  */
 
-#include "precompiled.hpp"
 #include "gc/g1/g1CardSet.inline.hpp"
 #include "gc/g1/g1CardSetContainers.inline.hpp"
 #include "gc/g1/g1CardSetMemory.inline.hpp"
-#include "gc/g1/heapRegion.inline.hpp"
+#include "gc/g1/g1HeapRegion.inline.hpp"
 #include "gc/shared/gcLogPrecious.hpp"
 #include "gc/shared/gcTraceTime.inline.hpp"
 #include "memory/allocation.inline.hpp"
-#include "runtime/atomic.hpp"
 #include "runtime/globals_extension.hpp"
 #include "runtime/java.hpp"
 #include "utilities/bitMap.inline.hpp"
 #include "utilities/concurrentHashTable.inline.hpp"
+#include "utilities/concurrentHashTableTasks.inline.hpp"
 #include "utilities/globalDefinitions.hpp"
 
 G1CardSet::ContainerPtr G1CardSet::FullCardSet = (G1CardSet::ContainerPtr)-1;
 uint G1CardSet::_split_card_shift = 0;
 size_t G1CardSet::_split_card_mask = 0;
 
+class G1CardSetHashTableConfig : public StackObj {
+public:
+  using Value = G1CardSetHashTableValue;
+
+  static uintx get_hash(Value const& value, bool* is_dead);
+  static void* allocate_node(void* context, size_t size, Value const& value);
+  static void free_node(void* context, void* memory, Value const& value);
+};
+
+using CardSetHash = ConcurrentHashTable<G1CardSetHashTableConfig, mtGCCardSet>;
+
 static uint default_log2_card_regions_per_region() {
   uint log2_card_regions_per_heap_region = 0;
 
   const uint card_container_limit = G1CardSetContainer::LogCardsPerRegionLimit;
-  if (card_container_limit < (uint)HeapRegion::LogCardsPerRegion) {
-    log2_card_regions_per_heap_region = (uint)HeapRegion::LogCardsPerRegion - card_container_limit;
+  if (card_container_limit < (uint)G1HeapRegion::LogCardsPerRegion) {
+    log2_card_regions_per_heap_region = (uint)G1HeapRegion::LogCardsPerRegion - card_container_limit;
   }
 
   return log2_card_regions_per_heap_region;
 }
 
 G1CardSetConfiguration::G1CardSetConfiguration() :
-  G1CardSetConfiguration(HeapRegion::LogCardsPerRegion - default_log2_card_regions_per_region(),                                                                                   /* inline_ptr_bits_per_card */
+  G1CardSetConfiguration(G1HeapRegion::LogCardsPerRegion - default_log2_card_regions_per_region(),                                                                                   /* inline_ptr_bits_per_card */
                          G1RemSetArrayOfCardsEntries,                               /* max_cards_in_array */
                          (double)G1RemSetCoarsenHowlBitmapToHowlFullPercent / 100,  /* cards_in_bitmap_threshold_percent */
                          G1RemSetHowlNumBuckets,                                    /* num_buckets_in_howl */
                          (double)G1RemSetCoarsenHowlToFullPercent / 100,            /* cards_in_howl_threshold_percent */
-                         (uint)HeapRegion::CardsPerRegion >> default_log2_card_regions_per_region(),
+                         (uint)G1HeapRegion::CardsPerRegion >> default_log2_card_regions_per_region(),
                                                                                     /* max_cards_in_card_set */
                          default_log2_card_regions_per_region())                    /* log2_card_regions_per_region */
 {
-  assert((_log2_card_regions_per_heap_region + _log2_cards_per_card_region) == (uint)HeapRegion::LogCardsPerRegion,
+  assert((_log2_card_regions_per_heap_region + _log2_cards_per_card_region) == (uint)G1HeapRegion::LogCardsPerRegion,
          "inconsistent heap region virtualization setup");
 }
 
@@ -98,7 +108,7 @@ G1CardSetConfiguration::G1CardSetConfiguration(uint inline_ptr_bits_per_card,
   _max_cards_in_howl_bitmap(G1CardSetHowl::bitmap_size(_max_cards_in_card_set, _num_buckets_in_howl)),
   _cards_in_howl_bitmap_threshold(_max_cards_in_howl_bitmap * cards_in_bitmap_threshold_percent),
   _log2_max_cards_in_howl_bitmap(log2i_exact(_max_cards_in_howl_bitmap)),
-  _bitmap_hash_mask(~(~(0) << _log2_max_cards_in_howl_bitmap)),
+  _bitmap_hash_mask((1U << _log2_max_cards_in_howl_bitmap) - 1),
   _log2_card_regions_per_heap_region(log2_card_regions_per_heap_region),
   _log2_cards_per_card_region(log2i_exact(_max_cards_in_card_set)) {
 
@@ -135,7 +145,7 @@ G1CardSetConfiguration::G1CardSetConfiguration(uint inline_ptr_bits_per_card,
 }
 
 G1CardSetConfiguration::~G1CardSetConfiguration() {
-  FREE_C_HEAP_ARRAY(size_t, _card_set_alloc_options);
+  FREE_C_HEAP_ARRAY(_card_set_alloc_options);
 }
 
 void G1CardSetConfiguration::init_card_set_alloc_options() {
@@ -181,32 +191,32 @@ const char* G1CardSetConfiguration::mem_object_type_name_str(uint index) {
 void G1CardSetCoarsenStats::reset() {
   STATIC_ASSERT(ARRAY_SIZE(_coarsen_from) == ARRAY_SIZE(_coarsen_collision));
   for (uint i = 0; i < ARRAY_SIZE(_coarsen_from); i++) {
-    _coarsen_from[i] = 0;
-    _coarsen_collision[i] = 0;
+    _coarsen_from[i].store_relaxed(0);
+    _coarsen_collision[i].store_relaxed(0);
   }
 }
 
 void G1CardSetCoarsenStats::set(G1CardSetCoarsenStats& other) {
   STATIC_ASSERT(ARRAY_SIZE(_coarsen_from) == ARRAY_SIZE(_coarsen_collision));
   for (uint i = 0; i < ARRAY_SIZE(_coarsen_from); i++) {
-    _coarsen_from[i] = other._coarsen_from[i];
-    _coarsen_collision[i] = other._coarsen_collision[i];
+    _coarsen_from[i].store_relaxed(other._coarsen_from[i].load_relaxed());
+    _coarsen_collision[i].store_relaxed(other._coarsen_collision[i].load_relaxed());
   }
 }
 
 void G1CardSetCoarsenStats::subtract_from(G1CardSetCoarsenStats& other) {
   STATIC_ASSERT(ARRAY_SIZE(_coarsen_from) == ARRAY_SIZE(_coarsen_collision));
   for (uint i = 0; i < ARRAY_SIZE(_coarsen_from); i++) {
-    _coarsen_from[i] = other._coarsen_from[i] - _coarsen_from[i];
-    _coarsen_collision[i] = other._coarsen_collision[i] - _coarsen_collision[i];
+    _coarsen_from[i].store_relaxed(other._coarsen_from[i].load_relaxed() - _coarsen_from[i].load_relaxed());
+    _coarsen_collision[i].store_relaxed(other._coarsen_collision[i].load_relaxed() - _coarsen_collision[i].load_relaxed());
   }
 }
 
 void G1CardSetCoarsenStats::record_coarsening(uint tag, bool collision) {
   assert(tag < ARRAY_SIZE(_coarsen_from), "tag %u out of bounds", tag);
-  Atomic::inc(&_coarsen_from[tag], memory_order_relaxed);
+  _coarsen_from[tag].add_then_fetch(1u, memory_order_relaxed);
   if (collision) {
-    Atomic::inc(&_coarsen_collision[tag], memory_order_relaxed);
+    _coarsen_collision[tag].add_then_fetch(1u, memory_order_relaxed);
   }
 }
 
@@ -217,35 +227,45 @@ void G1CardSetCoarsenStats::print_on(outputStream* out) {
                 "Inline->AoC %zu (%zu) "
                 "AoC->BitMap %zu (%zu) "
                 "BitMap->Full %zu (%zu) ",
-                _coarsen_from[0], _coarsen_collision[0],
-                _coarsen_from[1], _coarsen_collision[1],
+                _coarsen_from[0].load_relaxed(), _coarsen_collision[0].load_relaxed(),
+                _coarsen_from[1].load_relaxed(), _coarsen_collision[1].load_relaxed(),
                 // There is no BitMap at the first level so we can't .
-                _coarsen_from[3], _coarsen_collision[3],
-                _coarsen_from[4], _coarsen_collision[4],
-                _coarsen_from[5], _coarsen_collision[5],
-                _coarsen_from[6], _coarsen_collision[6]
+                _coarsen_from[3].load_relaxed(), _coarsen_collision[3].load_relaxed(),
+                _coarsen_from[4].load_relaxed(), _coarsen_collision[4].load_relaxed(),
+                _coarsen_from[5].load_relaxed(), _coarsen_collision[5].load_relaxed(),
+                _coarsen_from[6].load_relaxed(), _coarsen_collision[6].load_relaxed()
                );
 }
 
 class G1CardSetHashTable : public CHeapObj<mtGCCardSet> {
   using ContainerPtr = G1CardSet::ContainerPtr;
+  using CHTScanTask = CardSetHash::ScanTask;
 
+  const static uint BucketClaimSize = 16;
+  // The claim size for group cardsets should be smaller to facilitate
+  // better work distribution. The group cardsets should be larger than
+  // the per region cardsets.
+  const static uint GroupBucketClaimSize = 4;
   // Did we insert at least one card in the table?
-  bool volatile _inserted_card;
+  Atomic<bool> _inserted_card;
 
   G1CardSetMemoryManager* _mm;
   CardSetHash _table;
+  CHTScanTask _table_scanner;
 
   class G1CardSetHashTableLookUp : public StackObj {
     uint _region_idx;
   public:
     explicit G1CardSetHashTableLookUp(uint region_idx) : _region_idx(region_idx) { }
 
-    uintx get_hash() const { return _region_idx; }
+    uintx get_hash() const { return G1CardSetHashTable::get_hash(_region_idx); }
 
-    bool equals(G1CardSetHashTableValue* value, bool* is_dead) {
-      *is_dead = false;
+    bool equals(G1CardSetHashTableValue* value) {
       return value->_region_idx == _region_idx;
+    }
+
+    bool is_dead(G1CardSetHashTableValue*) {
+      return false;
     }
   };
 
@@ -261,18 +281,6 @@ class G1CardSetHashTable : public CHeapObj<mtGCCardSet> {
     G1CardSetHashTableValue* value() const { return _value; }
   };
 
-  class G1CardSetHashTableScan : public StackObj {
-    G1CardSet::ContainerPtrClosure* _scan_f;
-  public:
-    explicit G1CardSetHashTableScan(G1CardSet::ContainerPtrClosure* f) : _scan_f(f) { }
-
-    bool operator()(G1CardSetHashTableValue* value) {
-      _scan_f->do_containerptr(value->_region_idx, value->_num_occupied, value->_container);
-      return true;
-    }
-  };
-
-
 public:
   static const size_t InitialLogTableSize = 2;
 
@@ -280,7 +288,11 @@ public:
                      size_t initial_log_table_size = InitialLogTableSize) :
     _inserted_card(false),
     _mm(mm),
-    _table(mm, initial_log_table_size) {
+    _table(Mutex::service-1,
+           mm,
+           initial_log_table_size,
+           false /* enable_statistics */),
+    _table_scanner(&_table, BucketClaimSize) {
   }
 
   ~G1CardSetHashTable() {
@@ -298,13 +310,17 @@ public:
     G1CardSetHashTableValue value(region_idx, G1CardSetInlinePtr());
     bool inserted = _table.insert_get(Thread::current(), lookup, value, found, should_grow);
 
-    if (!_inserted_card && inserted) {
+    if (!_inserted_card.load_relaxed() && inserted) {
       // It does not matter to us who is setting the flag so a regular atomic store
       // is sufficient.
-      Atomic::store(&_inserted_card, true);
+      _inserted_card.store_relaxed(true);
     }
 
     return found.value();
+  }
+
+  static uint get_hash(uint region_idx) {
+    return region_idx;
   }
 
   G1CardSetHashTableValue* get(uint region_idx) {
@@ -315,21 +331,33 @@ public:
     return found.value();
   }
 
-  void iterate_safepoint(G1CardSet::ContainerPtrClosure* cl2) {
-    G1CardSetHashTableScan cl(cl2);
-    _table.do_safepoint_scan(cl);
+  template <typename SCAN_FUNC>
+  void iterate_safepoint(SCAN_FUNC& scan_f) {
+    _table_scanner.do_safepoint_scan(scan_f);
   }
 
-  void iterate(G1CardSet::ContainerPtrClosure* cl2) {
-    G1CardSetHashTableScan cl(cl2);
-    _table.do_scan(Thread::current(), cl);
+  template <typename SCAN_FUNC>
+  void iterate(SCAN_FUNC& scan_f) {
+    _table.do_scan(Thread::current(), scan_f);
   }
 
   void reset() {
-    if (Atomic::load(&_inserted_card)) {
+    if (_inserted_card.load_relaxed()) {
       _table.unsafe_reset(InitialLogTableSize);
-      Atomic::store(&_inserted_card, false);
+      _inserted_card.store_relaxed(false);
     }
+  }
+
+  void reset_table_scanner() {
+    reset_table_scanner(BucketClaimSize);
+  }
+
+  void reset_table_scanner_for_groups() {
+    reset_table_scanner(GroupBucketClaimSize);
+  }
+
+  void reset_table_scanner(uint claim_size) {
+    _table_scanner.set(&_table, claim_size);
   }
 
   void grow() {
@@ -344,6 +372,11 @@ public:
 
   size_t log_table_size() { return _table.get_size_log2(Thread::current()); }
 };
+
+uintx G1CardSetHashTableConfig::get_hash(Value const& value, bool* is_dead) {
+  *is_dead = false;
+  return G1CardSetHashTable::get_hash(value._region_idx);
+}
 
 void* G1CardSetHashTableConfig::allocate_node(void* context, size_t size, Value const& value) {
   G1CardSetMemoryManager* mm = (G1CardSetMemoryManager*)context;
@@ -372,7 +405,7 @@ G1CardSet::~G1CardSet() {
 
 void G1CardSet::initialize(MemRegion reserved) {
   const uint BitsInUint = sizeof(uint) * BitsPerByte;
-  const uint CardBitsWithinCardRegion = MIN2((uint)HeapRegion::LogCardsPerRegion, G1CardSetContainer::LogCardsPerRegionLimit);
+  const uint CardBitsWithinCardRegion = MIN2((uint)G1HeapRegion::LogCardsPerRegion, G1CardSetContainer::LogCardsPerRegionLimit);
 
   // Check if the number of cards within a region fits an uint.
   if (CardBitsWithinCardRegion > BitsInUint) {
@@ -421,14 +454,14 @@ void G1CardSet::free_mem_object(ContainerPtr container) {
   _mm->free(container_type_to_mem_object_type(type), value);
 }
 
-G1CardSet::ContainerPtr G1CardSet::acquire_container(ContainerPtr volatile* container_addr) {
+G1CardSet::ContainerPtr G1CardSet::acquire_container(Atomic<ContainerPtr>* container_addr) {
   // Update reference counts under RCU critical section to avoid a
   // use-after-cleapup bug where we increment a reference count for
   // an object whose memory has already been cleaned up and reused.
   GlobalCounter::CriticalSection cs(Thread::current());
   while (true) {
     // Get ContainerPtr and increment refcount atomically wrt to memory reuse.
-    ContainerPtr container = Atomic::load_acquire(container_addr);
+    ContainerPtr container = container_addr->load_acquire();
     uint cs_type = container_type(container);
     if (container == FullCardSet || cs_type == ContainerInlinePtr) {
       return container;
@@ -469,15 +502,15 @@ class G1ReleaseCardsets : public StackObj {
   G1CardSet* _card_set;
   using ContainerPtr = G1CardSet::ContainerPtr;
 
-  void coarsen_to_full(ContainerPtr* container_addr) {
+  void coarsen_to_full(Atomic<ContainerPtr>* container_addr) {
     while (true) {
-      ContainerPtr cur_container = Atomic::load_acquire(container_addr);
+      ContainerPtr cur_container = container_addr->load_acquire();
       uint cs_type = G1CardSet::container_type(cur_container);
       if (cur_container == G1CardSet::FullCardSet) {
         return;
       }
 
-      ContainerPtr old_value = Atomic::cmpxchg(container_addr, cur_container, G1CardSet::FullCardSet);
+      ContainerPtr old_value = container_addr->compare_exchange(cur_container, G1CardSet::FullCardSet);
 
       if (old_value == cur_container) {
         _card_set->release_and_maybe_free_container(cur_container);
@@ -489,7 +522,7 @@ class G1ReleaseCardsets : public StackObj {
 public:
   explicit G1ReleaseCardsets(G1CardSet* card_set) : _card_set(card_set) { }
 
-  void operator ()(ContainerPtr* container_addr) {
+  void operator ()(Atomic<ContainerPtr>* container_addr) {
     coarsen_to_full(container_addr);
   }
 };
@@ -510,10 +543,10 @@ G1AddCardResult G1CardSet::add_to_howl(ContainerPtr parent_container,
   ContainerPtr container;
 
   uint bucket = _config->howl_bucket_index(card_in_region);
-  ContainerPtr volatile* bucket_entry = howl->get_container_addr(bucket);
+  Atomic<ContainerPtr>* bucket_entry = howl->container_addr(bucket);
 
   while (true) {
-    if (Atomic::load(&howl->_num_entries) >= _config->cards_in_howl_threshold()) {
+    if (howl->_num_entries.load_relaxed() >= _config->cards_in_howl_threshold()) {
       return Overflow;
     }
 
@@ -537,7 +570,7 @@ G1AddCardResult G1CardSet::add_to_howl(ContainerPtr parent_container,
   }
 
   if (increment_total && add_result == Added) {
-    Atomic::inc(&howl->_num_entries, memory_order_relaxed);
+    howl->_num_entries.add_then_fetch(1u, memory_order_relaxed);
   }
 
   if (to_transfer != nullptr) {
@@ -554,7 +587,7 @@ G1AddCardResult G1CardSet::add_to_bitmap(ContainerPtr container, uint card_in_re
   return bitmap->add(card_offset, _config->cards_in_howl_bitmap_threshold(), _config->max_cards_in_howl_bitmap());
 }
 
-G1AddCardResult G1CardSet::add_to_inline_ptr(ContainerPtr volatile* container_addr, ContainerPtr container, uint card_in_region) {
+G1AddCardResult G1CardSet::add_to_inline_ptr(Atomic<ContainerPtr>* container_addr, ContainerPtr container, uint card_in_region) {
   G1CardSetInlinePtr value(container_addr, container);
   return value.add(card_in_region, _config->inline_ptr_bits_per_card(), _config->max_cards_in_inline_ptr());
 }
@@ -576,7 +609,7 @@ G1CardSet::ContainerPtr G1CardSet::create_coarsened_array_of_cards(uint card_in_
   return new_container;
 }
 
-bool G1CardSet::coarsen_container(ContainerPtr volatile* container_addr,
+bool G1CardSet::coarsen_container(Atomic<ContainerPtr>* container_addr,
                                   ContainerPtr cur_container,
                                   uint card_in_region,
                                   bool within_howl) {
@@ -606,7 +639,7 @@ bool G1CardSet::coarsen_container(ContainerPtr volatile* container_addr,
       ShouldNotReachHere();
   }
 
-  ContainerPtr old_value = Atomic::cmpxchg(container_addr, cur_container, new_container); // Memory order?
+  ContainerPtr old_value = container_addr->compare_exchange(cur_container, new_container); // Memory order?
   if (old_value == cur_container) {
     // Success. Indicate that the cards from the current card set must be transferred
     // by this caller.
@@ -653,7 +686,7 @@ void G1CardSet::transfer_cards(G1CardSetHashTableValue* table_entry, ContainerPt
     assert(container_type(source_container) == ContainerHowl, "must be");
     // Need to correct for that the Full remembered set occupies more cards than the
     // AoCS before.
-    Atomic::add(&_num_occupied, _config->max_cards_in_region() - table_entry->_num_occupied, memory_order_relaxed);
+    _num_occupied.add_then_fetch(_config->max_cards_in_region() - table_entry->_num_occupied.load_relaxed(), memory_order_relaxed);
   }
 }
 
@@ -679,18 +712,18 @@ void G1CardSet::transfer_cards_in_howl(ContainerPtr parent_container,
     diff -= 1;
 
     G1CardSetHowl* howling_array = container_ptr<G1CardSetHowl>(parent_container);
-    Atomic::add(&howling_array->_num_entries, diff, memory_order_relaxed);
+    howling_array->_num_entries.add_then_fetch(diff, memory_order_relaxed);
 
     G1CardSetHashTableValue* table_entry = get_container(card_region);
     assert(table_entry != nullptr, "Table entry not found for transferred cards");
 
-    Atomic::add(&table_entry->_num_occupied, diff, memory_order_relaxed);
+    table_entry->_num_occupied.add_then_fetch(diff, memory_order_relaxed);
 
-    Atomic::add(&_num_occupied, diff, memory_order_relaxed);
+    _num_occupied.add_then_fetch(diff, memory_order_relaxed);
   }
 }
 
-G1AddCardResult G1CardSet::add_to_container(ContainerPtr volatile* container_addr,
+G1AddCardResult G1CardSet::add_to_container(Atomic<ContainerPtr>* container_addr,
                                             ContainerPtr container,
                                             uint card_region,
                                             uint card_in_region,
@@ -745,6 +778,15 @@ G1AddCardResult G1CardSet::add_card(uintptr_t card) {
   uint card_within_region;
   split_card(card, card_region, card_within_region);
 
+#ifdef ASSERT
+  {
+    uint region_idx = card_region >> config()->log2_card_regions_per_heap_region();
+    G1HeapRegion* r = G1CollectedHeap::heap()->region_at(region_idx);
+    assert(!r->rem_set()->has_cset_group() ||
+           r->rem_set()->cset_group()->card_set() != this, "Should not be sharing a cardset");
+  }
+#endif
+
   return add_card(card_region, card_within_region, true /* increment_total */);
 }
 
@@ -784,8 +826,8 @@ G1AddCardResult G1CardSet::add_card(uint card_region, uint card_in_region, bool 
   }
 
   if (increment_total && add_result == Added) {
-    Atomic::inc(&table_entry->_num_occupied, memory_order_relaxed);
-    Atomic::inc(&_num_occupied, memory_order_relaxed);
+    table_entry->_num_occupied.add_then_fetch(1u, memory_order_relaxed);
+    _num_occupied.add_then_fetch(1u, memory_order_relaxed);
   }
   if (should_grow_table) {
     _table->grow();
@@ -810,7 +852,7 @@ bool G1CardSet::contains_card(uint card_region, uint card_in_region) {
     return false;
   }
 
-  ContainerPtr container = table_entry->_container;
+  ContainerPtr container = table_entry->_container.load_relaxed();
   if (container == FullCardSet) {
     // contains_card() is not a performance critical method so we do not hide that
     // case in the switch below.
@@ -842,11 +884,11 @@ void G1CardSet::print_info(outputStream* st, uintptr_t card) {
 
   G1CardSetHashTableValue* table_entry = get_container(card_region);
   if (table_entry == nullptr) {
-    st->print("NULL card set");
+    st->print("null card set");
     return;
   }
 
-  ContainerPtr container = table_entry->_container;
+  ContainerPtr container = table_entry->_container.load_relaxed();
   if (container == FullCardSet) {
     st->print("FULL card set)");
     return;
@@ -895,10 +937,16 @@ void G1CardSet::iterate_cards_during_transfer(ContainerPtr const container, Card
 }
 
 void G1CardSet::iterate_containers(ContainerPtrClosure* cl, bool at_safepoint) {
+  auto do_value =
+    [&] (G1CardSetHashTableValue* value) {
+      cl->do_containerptr(value->_region_idx, value->_num_occupied.load_relaxed(), value->_container.load_relaxed());
+      return true;
+    };
+
   if (at_safepoint) {
-    _table->iterate_safepoint(cl);
+    _table->iterate_safepoint(do_value);
   } else {
-    _table->iterate(cl);
+    _table->iterate(do_value);
   }
 }
 
@@ -952,11 +1000,11 @@ bool G1CardSet::occupancy_less_or_equal_to(size_t limit) const {
 }
 
 bool G1CardSet::is_empty() const {
-  return _num_occupied == 0;
+  return _num_occupied.load_relaxed() == 0;
 }
 
 size_t G1CardSet::occupied() const {
-  return _num_occupied;
+  return _num_occupied.load_relaxed();
 }
 
 size_t G1CardSet::num_containers() {
@@ -973,10 +1021,6 @@ size_t G1CardSet::num_containers() {
 
   iterate_containers(&cl);
   return cl._count;
-}
-
-G1CardSetCoarsenStats G1CardSet::coarsen_stats() {
-  return _coarsen_stats;
 }
 
 void G1CardSet::print_coarsen_stats(outputStream* out) {
@@ -1006,6 +1050,14 @@ size_t G1CardSet::static_mem_size() {
 
 void G1CardSet::clear() {
   _table->reset();
-  _num_occupied = 0;
+  _num_occupied.store_relaxed(0);
   _mm->flush();
+}
+
+void G1CardSet::reset_table_scanner() {
+  _table->reset_table_scanner();
+}
+
+void G1CardSet::reset_table_scanner_for_groups() {
+  _table->reset_table_scanner_for_groups();
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,7 @@
  * @library /test/lib
  * @build jdk.test.lib.RandomFactory
  * @modules java.base/jdk.internal.util
- * @run testng/othervm/timeout=900 -Xmx12G ReadXBytes
+ * @run junit/othervm/timeout=900 -Xmx12g ReadXBytes
  * @key randomness
  */
 import java.io.File;
@@ -48,20 +48,24 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Random;
+import java.util.stream.IntStream;
 import jdk.internal.util.ArraysSupport;
 
 import static java.nio.file.StandardOpenOption.*;
 
 import jdk.test.lib.RandomFactory;
 
-import org.testng.Assert;
-import static org.testng.Assert.assertEquals;
-import static org.testng.Assert.assertNotNull;
-import static org.testng.Assert.assertThrows;
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertTrue;
-import org.testng.annotations.DataProvider;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ReadXBytes {
 
@@ -100,24 +104,29 @@ public class ReadXBytes {
     // Creates a temporary file of a specified length with random content
     static Path createFileWithRandomContent(long length) throws IOException {
         Path file = createFile(length);
-        try (FileChannel fc = FileChannel.open(file, WRITE);) {
-            long pos = 0L;
-            // if the length exceeds 2 GB, skip the first 2 GB - 1 MB bytes
-            if (length >= 2L*1024*1024*1024) {
-                // write the last (length - 2GB - 1MB) bytes
-                pos = 2047L*1024*1024;
-            } else if (length > 0) {
-                // write either the first or last bytes only
-                long p = Math.min(Math.abs(RAND.nextLong()), length - 1);
-                pos = RAND.nextBoolean() ? p : length - 1 - p;
-            }
-            fc.position(pos);
-            int bufLength = Math.min(32768, (int)Math.min(length - pos, BIG_LENGTH));
-            byte[] buf = new byte[bufLength];
-            while (pos < length) {
+        try (FileChannel fc = FileChannel.open(file, WRITE)) {
+            if (length < 65536) {
+                // if the length is less than 64k, write the entire file
+                byte[] buf = new byte[(int)length];
                 RAND.nextBytes(buf);
-                int len = (int)Math.min(bufLength, length - pos);
-                pos += fc.write(ByteBuffer.wrap(buf, 0, len));
+                ByteBuffer bb = ByteBuffer.wrap(buf);
+                while (bb.hasRemaining()) {
+                    fc.write(bb);
+                }
+            } else {
+                // write the first and the last 32k only
+                byte[] buf = new byte[32768];
+                RAND.nextBytes(buf);
+                ByteBuffer bb = ByteBuffer.wrap(buf);
+                while (bb.hasRemaining()) {
+                    fc.write(bb);
+                }
+                bb.clear();
+                fc.position(length - buf.length);
+                RAND.nextBytes(buf);
+                while (bb.hasRemaining()) {
+                    fc.write(bb);
+                }
             }
         }
         return file;
@@ -188,7 +197,7 @@ public class ReadXBytes {
             (length, cis) -> {
                 byte[] bytes = cis.readAllBytes();
                 assertNotNull(bytes);
-                assertEquals(bytes.length, 0L);
+                assertEquals(0, bytes.length);
             }
         );
     }
@@ -201,7 +210,7 @@ public class ReadXBytes {
                 cis.skipNBytes(length);
                 byte[] bytes = cis.readAllBytes();
                 assertNotNull(bytes);
-                assertEquals(bytes.length, 0);
+                assertEquals(0, bytes.length);
             }
         );
     }
@@ -213,9 +222,9 @@ public class ReadXBytes {
             (length, cis, fis) -> {
                 byte[] cisBytes = cis.readAllBytes();
                 assertNotNull(cisBytes);
-                assertEquals(cisBytes.length, (long)length);
+                assertEquals(length, cisBytes.length);
                 byte[] fisBytes = fis.readAllBytes();
-                assertEquals(cisBytes, fisBytes);
+                assertArrayEquals(fisBytes, cisBytes);
             }
         );
     }
@@ -231,20 +240,19 @@ public class ReadXBytes {
         );
     }
 
-    // Provides an array of lengths
-    @DataProvider
-    public Object[][] lengthProvider() throws IOException {
-        return new Object[][] {
-            {1 + RAND.nextInt(1)},
-            {1 + RAND.nextInt(Byte.MAX_VALUE)},
-            {1 + RAND.nextInt(Short.MAX_VALUE)},
-            {1 + RAND.nextInt(1_000_000)},
-            {1 + RAND.nextInt(BIG_LENGTH)}
-        };
+    // Provides a stream of lengths
+    public static IntStream fileLengths() throws IOException {
+        return IntStream.of
+            (1 + RAND.nextInt(1),
+             1 + RAND.nextInt(Byte.MAX_VALUE),
+             1 + RAND.nextInt(Short.MAX_VALUE),
+             1 + RAND.nextInt(1_000_000),
+             1 + RAND.nextInt(BIG_LENGTH));
     }
 
     // Verifies readAllBytes() accuracy for random lengths and initial positions
-    @Test(dataProvider = "lengthProvider")
+    @ParameterizedTest
+    @MethodSource("fileLengths")
     public void readAllBytes(int len) throws IOException {
         dataTest(len, (length) -> createFileWithRandomContent(length),
             (length, cis, fis) -> {
@@ -252,10 +260,10 @@ public class ReadXBytes {
                 cis.skipNBytes(position);
                 byte[] cisBytes = cis.readAllBytes();
                 assertNotNull(cisBytes);
-                assertEquals(cisBytes.length, length - position);
+                assertEquals(length - position, cisBytes.length);
                 fis.skipNBytes(position);
                 byte[] fisBytes = fis.readAllBytes();
-                assertEquals(cisBytes, fisBytes);
+                assertArrayEquals(fisBytes, cisBytes);
             }
         );
     }
@@ -280,7 +288,7 @@ public class ReadXBytes {
             (length, cis) -> {
                 byte[] bytes = cis.readNBytes(1);
                 assertNotNull(bytes);
-                assertEquals(bytes.length, 0);
+                assertEquals(0, bytes.length);
             }
         );
     }
@@ -293,7 +301,7 @@ public class ReadXBytes {
                 cis.skipNBytes(length);
                 byte[] bytes = cis.readNBytes(1);
                 assertNotNull(bytes);
-                assertEquals(bytes.length, 0);
+                assertEquals(0, bytes.length);
             }
         );
     }
@@ -305,9 +313,9 @@ public class ReadXBytes {
             (length, cis, fis) -> {
                 byte[] cisBytes = cis.readNBytes(BIG_LENGTH);
                 assertNotNull(cisBytes);
-                assertEquals(cisBytes.length, (long)length);
+                assertEquals(length, cisBytes.length);
                 byte[] fisBytes = fis.readNBytes(BIG_LENGTH);
-                assertEquals(cisBytes, fisBytes);
+                assertArrayEquals(fisBytes, cisBytes);
             }
         );
     }
@@ -322,16 +330,17 @@ public class ReadXBytes {
                 cis.skipNBytes(BIG_LENGTH);
                 byte[] cisBytes = cis.readNBytes(n);
                 assertNotNull(cisBytes);
-                assertEquals(cisBytes.length, n);
+                assertEquals(n, cisBytes.length);
                 fis.skipNBytes(BIG_LENGTH);
                 byte[] fisBytes = fis.readNBytes(n);
-                assertEquals(cisBytes, fisBytes);
+                assertArrayEquals(fisBytes, cisBytes);
             }
         );
     }
 
     // Verifies readNBytes() accuracy for random lengths and initial positions
-    @Test(dataProvider = "lengthProvider")
+    @ParameterizedTest
+    @MethodSource("fileLengths")
     public void readNBytes(int len) throws IOException {
         dataTest(len, (length) -> createFileWithRandomContent(length),
             (length, cis, fis) -> {
@@ -341,10 +350,10 @@ public class ReadXBytes {
                 cis.skipNBytes(position);
                 byte[] cisBytes = cis.readNBytes(n);
                 assertNotNull(cisBytes);
-                assertEquals(cisBytes.length, n);
+                assertEquals(n, cisBytes.length);
                 fis.skipNBytes(position);
                 byte[] fisBytes = fis.readNBytes(n);
-                assertEquals(cisBytes, fisBytes);
+                assertArrayEquals(fisBytes, cisBytes);
             }
         );
     }

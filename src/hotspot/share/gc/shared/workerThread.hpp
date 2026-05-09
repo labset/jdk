@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,6 +27,7 @@
 
 #include "gc/shared/gcId.hpp"
 #include "memory/allocation.hpp"
+#include "runtime/atomic.hpp"
 #include "runtime/nonJavaThread.hpp"
 #include "runtime/semaphore.hpp"
 #include "utilities/debug.hpp"
@@ -48,7 +49,7 @@ private:
     _gc_id(GCId::current_or_undefined()) {}
 
   const char* name() const { return _name; }
-  const uint gc_id() const { return _gc_id; }
+  uint gc_id() const { return _gc_id; }
 
   virtual void work(uint worker_id) = 0;
 };
@@ -58,8 +59,8 @@ class WorkerTaskDispatcher {
   // The task currently being dispatched to the WorkerThreads.
   WorkerTask* _task;
 
-  volatile uint _started;
-  volatile uint _not_finished;
+  Atomic<uint> _started;
+  Atomic<uint> _not_finished;
 
   // Semaphore used to start the WorkerThreads.
   Semaphore _start_semaphore;
@@ -93,6 +94,9 @@ private:
 
   WorkerThread* create_worker(uint name_suffix);
 
+  void set_indirect_states();
+  void clear_indirect_states();
+
 protected:
   virtual void on_create_worker(WorkerThread* worker) {}
 
@@ -100,6 +104,7 @@ public:
   WorkerThreads(const char* name, uint max_workers);
 
   void initialize_workers();
+  bool allow_inject_creation_failure() const;
 
   uint max_workers() const     { return _max_workers; }
   uint created_workers() const { return _created_workers; }
@@ -108,6 +113,8 @@ public:
   uint set_active_workers(uint num_workers);
 
   void threads_do(ThreadClosure* tc) const;
+  template <typename Function>
+  void threads_do_f(Function function) const;
 
   const char* name() const { return _name; }
 

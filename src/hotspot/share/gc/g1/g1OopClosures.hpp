@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,15 +25,14 @@
 #ifndef SHARE_GC_G1_G1OOPCLOSURES_HPP
 #define SHARE_GC_G1_G1OOPCLOSURES_HPP
 
+#include "classfile/classLoaderData.hpp"
 #include "gc/g1/g1HeapRegionAttr.hpp"
 #include "memory/iterator.hpp"
 #include "oops/markWord.hpp"
 
-class HeapRegion;
 class G1CollectedHeap;
 class G1RemSet;
 class G1ConcurrentMark;
-class DirtyCardToOopClosure;
 class G1CMBitMap;
 class G1ParScanThreadState;
 class G1ScanEvacuatedObjClosure;
@@ -54,8 +53,6 @@ protected:
   template <class T>
   inline void handle_non_cset_obj_common(G1HeapRegionAttr const region_attr, T* p, oop const obj);
 public:
-  virtual ReferenceIterationMode reference_iteration_mode() { return DO_FIELDS; }
-
   inline void trim_queue_partially();
 };
 
@@ -67,6 +64,8 @@ public:
                     G1ParScanThreadState* pss,
                     size_t& heap_roots_found) :
     G1ScanClosureBase(g1h, pss), _heap_roots_found(heap_roots_found) { }
+
+  virtual ReferenceIterationMode reference_iteration_mode() { return DO_FIELDS; }
 
   template <class T> void do_oop_work(T* p);
   virtual void do_oop(narrowOop* p) { do_oop_work(p); }
@@ -87,44 +86,45 @@ public:
 
 // This closure is applied to the fields of the objects that have just been copied during evacuation.
 class G1ScanEvacuatedObjClosure : public G1ScanClosureBase {
-  friend class G1SkipCardEnqueueSetter;
+  friend class G1SkipCardMarkSetter;
 
-  enum SkipCardEnqueueTristate {
+  enum SkipCardMarkTristate {
     False = 0,
     True,
     Uninitialized
   };
 
-  SkipCardEnqueueTristate _skip_card_enqueue;
+  SkipCardMarkTristate _skip_card_mark;
 
 public:
   G1ScanEvacuatedObjClosure(G1CollectedHeap* g1h, G1ParScanThreadState* par_scan_state) :
-    G1ScanClosureBase(g1h, par_scan_state), _skip_card_enqueue(Uninitialized) { }
+    G1ScanClosureBase(g1h, par_scan_state), _skip_card_mark(Uninitialized) { }
 
   template <class T> void do_oop_work(T* p);
   virtual void do_oop(oop* p)          { do_oop_work(p); }
   virtual void do_oop(narrowOop* p)    { do_oop_work(p); }
 
-  // We need to do reference discovery while processing evacuated objects.
-  virtual ReferenceIterationMode reference_iteration_mode() { return DO_DISCOVERED_AND_DISCOVERY; }
-
   void set_ref_discoverer(ReferenceDiscoverer* rd) {
     set_ref_discoverer_internal(rd);
   }
+
+#ifdef ASSERT
+  bool skip_card_mark_set() const { return _skip_card_mark != Uninitialized; }
+#endif
 };
 
-// RAII object to properly set the _skip_card_enqueue field in G1ScanEvacuatedObjClosure.
-class G1SkipCardEnqueueSetter : public StackObj {
+// RAII object to properly set the _skip_card_mark field in G1ScanEvacuatedObjClosure.
+class G1SkipCardMarkSetter : public StackObj {
   G1ScanEvacuatedObjClosure* _closure;
 
 public:
-  G1SkipCardEnqueueSetter(G1ScanEvacuatedObjClosure* closure, bool skip_card_enqueue) : _closure(closure) {
-    assert(_closure->_skip_card_enqueue == G1ScanEvacuatedObjClosure::Uninitialized, "Must not be set");
-    _closure->_skip_card_enqueue = skip_card_enqueue ? G1ScanEvacuatedObjClosure::True : G1ScanEvacuatedObjClosure::False;
+  G1SkipCardMarkSetter(G1ScanEvacuatedObjClosure* closure, bool skip_card_mark) : _closure(closure) {
+    assert(_closure->_skip_card_mark == G1ScanEvacuatedObjClosure::Uninitialized, "Must not be set");
+    _closure->_skip_card_mark = skip_card_mark ? G1ScanEvacuatedObjClosure::True : G1ScanEvacuatedObjClosure::False;
   }
 
-  ~G1SkipCardEnqueueSetter() {
-    DEBUG_ONLY(_closure->_skip_card_enqueue = G1ScanEvacuatedObjClosure::Uninitialized;)
+  ~G1SkipCardMarkSetter() {
+    DEBUG_ONLY(_closure->_skip_card_mark = G1ScanEvacuatedObjClosure::Uninitialized;)
   }
 };
 
@@ -179,7 +179,7 @@ public:
 };
 
 // Closure for iterating over object fields during concurrent marking
-class G1CMOopClosure : public MetadataVisitingOopIterateClosure {
+class G1CMOopClosure : public ClaimMetadataVisitingOopIterateClosure {
   G1CollectedHeap*   _g1h;
   G1CMTask*          _task;
 public:
@@ -190,13 +190,13 @@ public:
 };
 
 // Closure to scan the root regions during concurrent marking
-class G1RootRegionScanClosure : public MetadataVisitingOopIterateClosure {
-private:
+class G1RootRegionScanClosure : public ClaimMetadataVisitingOopIterateClosure {
   G1CollectedHeap* _g1h;
   G1ConcurrentMark* _cm;
   uint _worker_id;
 public:
   G1RootRegionScanClosure(G1CollectedHeap* g1h, G1ConcurrentMark* cm, uint worker_id) :
+    ClaimMetadataVisitingOopIterateClosure(ClassLoaderData::_claim_strong, nullptr),
     _g1h(g1h), _cm(cm), _worker_id(worker_id) { }
   template <class T> void do_oop_work(T* p);
   virtual void do_oop(      oop* p) { do_oop_work(p); }
@@ -206,12 +206,19 @@ public:
 class G1ConcurrentRefineOopClosure: public BasicOopIterateClosure {
   G1CollectedHeap* _g1h;
   uint _worker_id;
+  bool _has_ref_to_cset;
+  bool _has_ref_to_old;
 
 public:
   G1ConcurrentRefineOopClosure(G1CollectedHeap* g1h, uint worker_id) :
     _g1h(g1h),
-    _worker_id(worker_id) {
+    _worker_id(worker_id),
+    _has_ref_to_cset(false),
+    _has_ref_to_old(false) {
   }
+
+  bool has_ref_to_cset() const { return _has_ref_to_cset; }
+  bool has_ref_to_old() const { return _has_ref_to_old; }
 
   virtual ReferenceIterationMode reference_iteration_mode() { return DO_FIELDS; }
 
@@ -223,6 +230,7 @@ public:
 class G1RebuildRemSetClosure : public BasicOopIterateClosure {
   G1CollectedHeap* _g1h;
   uint _worker_id;
+
 public:
   G1RebuildRemSetClosure(G1CollectedHeap* g1h, uint worker_id) : _g1h(g1h), _worker_id(worker_id) {
   }

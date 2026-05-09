@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2020, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,6 +48,8 @@ public class MetricsMemoryTester {
             case "softlimit":
                 testMemorySoftLimit(args[1]);
                 break;
+            default:
+                throw new RuntimeException("unknown args: " + args[0] + " for MetricsMemoryTester");
         }
     }
 
@@ -68,16 +70,16 @@ public class MetricsMemoryTester {
 
         // We need swap to execute this test or will SEGV
         if (memAndSwapLimit <= memLimit) {
-            System.out.println("No swap memory limits, test case skipped");
+            System.out.println("No swap memory limits. Ignoring test!");
         } else {
             long count = Metrics.systemMetrics().getMemoryFailCount();
 
-            // Allocate 512M of data
-            byte[][] bytes = new byte[64][];
+            // Allocate 512M of data in 1M chunks per iteration
+            byte[][] bytes = new byte[64 * 8][];
             boolean atLeastOneAllocationWorked = false;
-            for (int i = 0; i < 64; i++) {
+            for (int i = 0; i < 64 * 8; i++) {
                 try {
-                    bytes[i] = new byte[8 * 1024 * 1024];
+                    bytes[i] = new byte[1024 * 1024];
                     atLeastOneAllocationWorked = true;
                     // Break out as soon as we see an increase in failcount
                     // to avoid getting killed by the OOM killer.

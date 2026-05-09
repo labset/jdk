@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -34,7 +34,7 @@ template <ChunkFrames frame_kind>
 inline bool StackChunkFrameStream<frame_kind>::is_in_frame(void* p0) const {
   assert(!is_done(), "");
   intptr_t* p = (intptr_t*)p0;
-  int argsize = is_compiled() ? (_cb->as_compiled_method()->method()->num_stack_arg_slots() * VMRegImpl::stack_slot_size) >> LogBytesPerWord : 0;
+  int argsize = is_compiled() ? (_cb->as_nmethod()->num_stack_arg_slots() * VMRegImpl::stack_slot_size) >> LogBytesPerWord : 0;
   int frame_size = _cb->frame_size() + argsize;
   return p == sp() - frame::sender_sp_offset || ((p - unextended_sp()) >= 0 && (p - unextended_sp()) < frame_size);
 }
@@ -77,12 +77,6 @@ inline intptr_t* StackChunkFrameStream<frame_kind>::unextended_sp_for_interprete
 }
 
 template <ChunkFrames frame_kind>
-intptr_t* StackChunkFrameStream<frame_kind>::next_sp_for_interpreter_frame() const {
-  assert_is_interpreted_and_frame_type_mixed();
-  return (derelativize(frame::interpreter_frame_locals_offset) + 1 >= _end) ? _end : fp() + frame::sender_sp_offset;
-}
-
-template <ChunkFrames frame_kind>
 inline void StackChunkFrameStream<frame_kind>::next_for_interpreter_frame() {
   assert_is_interpreted_and_frame_type_mixed();
   if (derelativize(frame::interpreter_frame_locals_offset) + 1 >= _end) {
@@ -112,16 +106,14 @@ inline int StackChunkFrameStream<frame_kind>::interpreter_frame_stack_argsize() 
 }
 
 template <ChunkFrames frame_kind>
-inline int StackChunkFrameStream<frame_kind>::interpreter_frame_num_oops() const {
+template <typename RegisterMapT>
+inline int StackChunkFrameStream<frame_kind>::interpreter_frame_num_oops(RegisterMapT* map) const {
   assert_is_interpreted_and_frame_type_mixed();
   ResourceMark rm;
-  InterpreterOopMap mask;
   frame f = to_frame();
-  f.interpreted_frame_oop_map(&mask);
-  return  mask.num_oops()
-        + 1 // for the mirror oop
-        + ((intptr_t*)f.interpreter_frame_monitor_begin()
-            - (intptr_t*)f.interpreter_frame_monitor_end())/BasicObjectLock::size();
+  InterpreterOopCount closure;
+  f.oops_interpreted_do(&closure, map);
+  return closure.count();
 }
 
 template<>

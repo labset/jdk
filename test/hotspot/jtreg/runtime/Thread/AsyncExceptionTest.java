@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,14 +26,22 @@
  * @bug 8283044
  * @requires vm.compiler1.enabled | vm.compiler2.enabled
  * @summary Stress delivery of asynchronous exceptions.
- * @library /test/lib /test/hotspot/jtreg
- * @build AsyncExceptionTest
- * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions -Xcomp
-                     -XX:CompileCommand=dontinline,AsyncExceptionTest::internalRun2
-                     -XX:CompileCommand=compileonly,AsyncExceptionTest::internalRun1
-                     -XX:CompileCommand=compileonly,AsyncExceptionTest::internalRun2
-                     AsyncExceptionTest
+ * @library /test/hotspot/jtreg/testlibrary
+ * @run main/othervm/native
+ *                   -XX:+IgnoreUnrecognizedVMOptions -XX:+StressCompiledExceptionHandlers
+ *                   -Xcomp -XX:TieredStopAtLevel=3
+ *                   -XX:CompileCommand=dontinline,AsyncExceptionTest::internalRun2
+ *                   -XX:CompileCommand=compileonly,AsyncExceptionTest::internalRun1
+ *                   -XX:CompileCommand=compileonly,AsyncExceptionTest::internalRun2
+ *                   AsyncExceptionTest
+ * @run main/othervm/native -Xcomp
+ *                   -XX:CompileCommand=dontinline,AsyncExceptionTest::internalRun2
+ *                   -XX:CompileCommand=compileonly,AsyncExceptionTest::internalRun1
+ *                   -XX:CompileCommand=compileonly,AsyncExceptionTest::internalRun2
+ *                   AsyncExceptionTest
  */
+
+import jvmti.JVMTIUtils;
 
 import java.util.concurrent.CountDownLatch;
 
@@ -41,31 +49,37 @@ public class AsyncExceptionTest extends Thread {
     private final static int DEF_TIME_MAX = 30;  // default max # secs to test
     private final static String PROG_NAME = "AsyncExceptionTest";
 
-    public CountDownLatch exitSyncObj = new CountDownLatch(1);
-    public CountDownLatch startSyncObj = new CountDownLatch(1);
+    // Avoid using CountDownLatch or similar objects that require unparking the
+    // main thread. Otherwise, if the main thread is run as a virtual thread, the
+    // async exception could be sent while the target is still executing FJP logic.
+    public volatile boolean started = false;
 
-    private boolean firstEntry = true;
     private boolean receivedThreadDeathinInternal1 = false;
     private boolean receivedThreadDeathinInternal2 = false;
+    private volatile RuntimeException error = null;
 
     @Override
     public void run() {
         try {
             internalRun1();
         } catch (ThreadDeath td) {
-            throw new RuntimeException("Catched ThreadDeath in run() instead of internalRun2() or internalRun1(). receivedThreadDeathinInternal1=" + receivedThreadDeathinInternal1 + "; receivedThreadDeathinInternal2=" + receivedThreadDeathinInternal2);
+            error = new RuntimeException("Caught ThreadDeath in run() instead of internalRun2() or internalRun1().\n"
+                    + "receivedThreadDeathinInternal1=" + receivedThreadDeathinInternal1
+                    + "; receivedThreadDeathinInternal2=" + receivedThreadDeathinInternal2);
         } catch (NoClassDefFoundError ncdfe) {
-            // ignore because we're testing Thread.stop() which can cause it
+            // ignore because we're testing StopThread() which can cause it
         }
 
         if (receivedThreadDeathinInternal2 == false && receivedThreadDeathinInternal1 == false) {
-            throw new RuntimeException("Didn't catched ThreadDeath in internalRun2() nor in internalRun1(). receivedThreadDeathinInternal1=" + receivedThreadDeathinInternal1 + "; receivedThreadDeathinInternal2=" + receivedThreadDeathinInternal2);
+            error = new RuntimeException("Didn't catch ThreadDeath in internalRun2() nor in internalRun1().\n"
+                    + "receivedThreadDeathinInternal1=" + receivedThreadDeathinInternal1
+                    + "; receivedThreadDeathinInternal2=" + receivedThreadDeathinInternal2);
         }
-        exitSyncObj.countDown();
     }
 
     public void internalRun1() {
         try {
+            started = true;
             while (!receivedThreadDeathinInternal2) {
               internalRun2();
             }
@@ -76,16 +90,10 @@ public class AsyncExceptionTest extends Thread {
 
     public void internalRun2() {
         try {
-            Integer myLocalCount = 1;
-            Integer myLocalCount2 = 1;
+            int myLocalCount = 1;
+            int myLocalCount2 = 1;
 
-            if (firstEntry) {
-                // Tell main thread we have started.
-                startSyncObj.countDown();
-                firstEntry = false;
-            }
-
-            while(myLocalCount > 0) {
+            while (myLocalCount > 0) {
                 myLocalCount2 = (myLocalCount % 3) / 2;
                 myLocalCount -= 1;
             }
@@ -117,32 +125,28 @@ public class AsyncExceptionTest extends Thread {
             thread.start();
             try {
                 // Wait for the worker thread to get going.
-                thread.startSyncObj.await();
-                while (true) {
-                    // Send async exception and wait until it is thrown
-                    thread.stop();
-                    thread.exitSyncObj.await();
-                    Thread.sleep(100);
-
-                    if (!thread.isAlive()) {
-                        // Done with Thread.stop() calls since
-                        // thread is not alive.
-                        break;
-                    }
+                while (!thread.started) {
+                    Thread.sleep(1);
                 }
+                // Send async exception and wait until it is thrown
+                JVMTIUtils.stopThread(thread);
+                thread.join();
             } catch (InterruptedException e) {
                 throw new Error("Unexpected: " + e);
             } catch (NoClassDefFoundError ncdfe) {
-                // Ignore because we're testing Thread.stop() which can
+                // Ignore because we're testing StopThread which can
                 // cause it. Yes, a NoClassDefFoundError that happens
                 // in a worker thread can subsequently be seen in the
                 // main thread.
             }
-
-            try {
-                thread.join();
-            } catch (InterruptedException e) {
-                throw new Error("Unexpected: " + e);
+            if (thread.isAlive()) {
+                // Really shouldn't be possible after join() above...
+                throw new RuntimeException("Thread did not exit.\n"
+                    + "receivedThreadDeathinInternal1=" + thread.receivedThreadDeathinInternal1
+                    + "; receivedThreadDeathinInternal2=" + thread.receivedThreadDeathinInternal2);
+            }
+            if (thread.error != null) {
+                throw thread.error;
             }
         }
 
@@ -165,4 +169,3 @@ public class AsyncExceptionTest extends Thread {
         System.exit(1);
     }
 }
-

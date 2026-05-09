@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2007, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2007, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,21 +45,10 @@
 
 #define SigHead TagIdConst('h','e','a','d')
 
-#define DT_BYTE     0
-#define DT_SHORT    1
-#define DT_INT      2
-#define DT_DOUBLE   3
-
 /* Default temp profile list size */
 #define DF_ICC_BUF_SIZE 32
 
 #define ERR_MSG_SIZE 256
-
-#ifdef _MSC_VER
-# ifndef snprintf
-#       define snprintf  _snprintf
-# endif
-#endif
 
 typedef struct lcmsProfile_s {
     cmsHPROFILE pf;
@@ -75,14 +64,9 @@ JavaVM *javaVM;
 void errorHandler(cmsContext ContextID, cmsUInt32Number errorCode,
                   const char *errorText) {
     JNIEnv *env;
-    char errMsg[ERR_MSG_SIZE];
+    char errMsg[ERR_MSG_SIZE] = {0};
 
-    int count = snprintf(errMsg, ERR_MSG_SIZE,
-                          "LCMS error %d: %s", errorCode, errorText);
-    if (count < 0 || count >= ERR_MSG_SIZE) {
-        count = ERR_MSG_SIZE - 1;
-    }
-    errMsg[count] = 0;
+    snprintf(errMsg, ERR_MSG_SIZE, "LCMS error %d: %s", errorCode, errorText);
 
     (*javaVM)->AttachCurrentThread(javaVM, (void**)&env, NULL);
     if (!(*env)->ExceptionCheck(env)) { // errorHandler may throw it before
@@ -141,9 +125,8 @@ static void ThrowIllegalArgumentException(JNIEnv *env, const char *msg) {
  * Signature: ([JIIZIZLjava/lang/Object;)J
  */
 JNIEXPORT jlong JNICALL Java_sun_java2d_cmm_lcms_LCMS_createNativeTransform
-  (JNIEnv *env, jclass cls, jlongArray profileIDs, jint renderType,
-   jint inFormatter, jboolean isInIntPacked,
-   jint outFormatter, jboolean isOutIntPacked, jobject disposerRef)
+  (JNIEnv *env, jclass cls, jlongArray profileIDs, jint renderingIntent,
+   jint inFormatter, jint outFormatter, jobject disposerRef)
 {
     cmsHPROFILE _iccArray[DF_ICC_BUF_SIZE];
     cmsHPROFILE *iccArray = &_iccArray[0];
@@ -157,16 +140,6 @@ JNIEXPORT jlong JNICALL Java_sun_java2d_cmm_lcms_LCMS_createNativeTransform
         // An exception should have already been thrown.
         return 0L;
     }
-
-#ifdef _LITTLE_ENDIAN
-    /* Reversing data packed into int for LE archs */
-    if (isInIntPacked) {
-        inFormatter ^= DOSWAP_SH(1);
-    }
-    if (isOutIntPacked) {
-        outFormatter ^= DOSWAP_SH(1);
-    }
-#endif
 
     if (DF_ICC_BUF_SIZE < size*2) {
         iccArray = (cmsHPROFILE*) malloc(
@@ -199,8 +172,13 @@ JNIEXPORT jlong JNICALL Java_sun_java2d_cmm_lcms_LCMS_createNativeTransform
         }
     }
 
+    cmsUInt32Number dwFlags = 0;
+    if (T_EXTRA(inFormatter) > 0 && T_EXTRA(outFormatter) > 0) {
+        dwFlags |= cmsFLAGS_COPY_ALPHA;
+    }
+
     sTrans = cmsCreateMultiprofileTransform(iccArray, j,
-        inFormatter, outFormatter, renderType, cmsFLAGS_COPY_ALPHA);
+        inFormatter, outFormatter, renderingIntent, dwFlags);
 
     (*env)->ReleaseLongArrayElements(env, profileIDs, ids, 0);
 
@@ -481,52 +459,17 @@ JNIEXPORT void JNICALL Java_sun_java2d_cmm_lcms_LCMS_setTagDataNative
     }
 }
 
-static void *getILData(JNIEnv *env, jobject data, jint type) {
-    switch (type) {
-        case DT_BYTE:
-            return (*env)->GetByteArrayElements(env, data, 0);
-        case DT_SHORT:
-            return (*env)->GetShortArrayElements(env, data, 0);
-        case DT_INT:
-            return (*env)->GetIntArrayElements(env, data, 0);
-        case DT_DOUBLE:
-            return (*env)->GetDoubleArrayElements(env, data, 0);
-        default:
-            return NULL;
-    }
-}
-
-static void releaseILData(JNIEnv *env, void *pData, jint type, jobject data,
-                          jint mode) {
-    switch (type) {
-        case DT_BYTE:
-            (*env)->ReleaseByteArrayElements(env, data, (jbyte *) pData, mode);
-            break;
-        case DT_SHORT:
-            (*env)->ReleaseShortArrayElements(env, data, (jshort *) pData, mode);
-            break;
-        case DT_INT:
-            (*env)->ReleaseIntArrayElements(env, data, (jint *) pData, mode);
-            break;
-        case DT_DOUBLE:
-            (*env)->ReleaseDoubleArrayElements(env, data, (jdouble *) pData, mode);
-            break;
-    }
-}
-
 /*
  * Class:     sun_java2d_cmm_lcms_LCMS
  * Method:    colorConvert
- * Signature: (JIIIIIIZZLjava/lang/Object;Ljava/lang/Object;)V
+ * Signature: (JIIIIIILjava/lang/Object;Ljava/lang/Object;)V
  */
 JNIEXPORT void JNICALL Java_sun_java2d_cmm_lcms_LCMS_colorConvert
   (JNIEnv *env, jclass cls, jlong ID, jint width, jint height, jint srcOffset,
    jint srcNextRowOffset, jint dstOffset, jint dstNextRowOffset,
-   jboolean srcAtOnce, jboolean dstAtOnce,
-   jobject srcData, jobject dstData, jint srcDType, jint dstDType)
+   jobject srcData, jobject dstData)
 {
     cmsHTRANSFORM sTrans = jlong_to_ptr(ID);
-
     if (sTrans == NULL) {
         J2dRlsTraceLn(J2D_TRACE_ERROR, "LCMS_colorConvert: transform == NULL");
         JNU_ThrowByName(env, "java/awt/color/CMMException",
@@ -534,69 +477,22 @@ JNIEXPORT void JNICALL Java_sun_java2d_cmm_lcms_LCMS_colorConvert
         return;
     }
 
-    void *inputBuffer = getILData(env, srcData, srcDType);
+    void *inputBuffer = (*env)->GetPrimitiveArrayCritical(env, srcData, NULL);
     if (inputBuffer == NULL) {
-        J2dRlsTraceLn(J2D_TRACE_ERROR, "");
         // An exception should have already been thrown.
         return;
     }
+    void *outputBuffer = (*env)->GetPrimitiveArrayCritical(env, dstData, NULL);
+    if (outputBuffer != NULL) {
+        char *input = (char *) inputBuffer + srcOffset;
+        char *output = (char *) outputBuffer + dstOffset;
 
-    void *outputBuffer = getILData(env, dstData, dstDType);
-    if (outputBuffer == NULL) {
-        releaseILData(env, inputBuffer, srcDType, srcData, JNI_ABORT);
-        // An exception should have already been thrown.
-        return;
-    }
+        cmsDoTransformLineStride(sTrans, input, output, width, height,
+                                 srcNextRowOffset, dstNextRowOffset, 0, 0);
 
-    char *inputRow = (char *) inputBuffer + srcOffset;
-    char *outputRow = (char *) outputBuffer + dstOffset;
-
-    if (srcAtOnce && dstAtOnce) {
-        cmsDoTransform(sTrans, inputRow, outputRow, width * height);
-    } else {
-        for (int i = 0; i < height; i++) {
-            cmsDoTransform(sTrans, inputRow, outputRow, width);
-            inputRow += srcNextRowOffset;
-            outputRow += dstNextRowOffset;
-        }
+        (*env)->ReleasePrimitiveArrayCritical(env, dstData, outputBuffer, 0);
     }
-
-    releaseILData(env, inputBuffer, srcDType, srcData, JNI_ABORT);
-    releaseILData(env, outputBuffer, dstDType, dstData, 0);
-}
-
-/*
- * Class:     sun_java2d_cmm_lcms_LCMS
- * Method:    getProfileID
- * Signature: (Ljava/awt/color/ICC_Profile;)Lsun/java2d/cmm/lcms/LCMSProfile;
- */
-JNIEXPORT jobject JNICALL Java_sun_java2d_cmm_lcms_LCMS_getProfileID
-  (JNIEnv *env, jclass cls, jobject pf)
-{
-    if (pf == NULL) {
-        return NULL;
-    }
-    jclass pcls = (*env)->GetObjectClass(env, pf);
-    if (pcls == NULL) {
-        return NULL;
-    }
-    jmethodID mid = (*env)->GetMethodID(env, pcls, "cmmProfile",
-                                        "()Lsun/java2d/cmm/Profile;");
-    if (mid == NULL) {
-        return NULL;
-    }
-    jobject cmmProfile = (*env)->CallObjectMethod(env, pf, mid);
-    if ((*env)->ExceptionCheck(env)) {
-        return NULL;
-    }
-    jclass lcmsPCls = (*env)->FindClass(env, "sun/java2d/cmm/lcms/LCMSProfile");
-    if (lcmsPCls == NULL) {
-        return NULL;
-    }
-    if ((*env)->IsInstanceOf(env, cmmProfile, lcmsPCls)) {
-        return cmmProfile;
-    }
-    return NULL;
+    (*env)->ReleasePrimitiveArrayCritical(env, srcData, inputBuffer, JNI_ABORT);
 }
 
 static cmsBool _getHeaderInfo(cmsHPROFILE pf, jbyte* pBuffer, jint bufferSize)

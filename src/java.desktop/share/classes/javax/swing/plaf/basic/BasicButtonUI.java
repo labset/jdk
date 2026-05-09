@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,8 +25,6 @@
 
 package javax.swing.plaf.basic;
 
-import sun.awt.AppContext;
-import sun.swing.SwingUtilities2;
 import java.awt.AWTKeyStroke;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -61,6 +59,8 @@ import javax.swing.plaf.ComponentUI;
 import javax.swing.plaf.UIResource;
 import javax.swing.text.View;
 
+import sun.swing.SwingUtilities2;
+
 /**
  * BasicButton implementation
  *
@@ -87,7 +87,7 @@ public class BasicButtonUI extends ButtonUI{
 
     private static final String propertyPrefix = "Button" + ".";
 
-    private static final Object BASIC_BUTTON_UI_KEY = new Object();
+    private static final ComponentUI UI = new BasicButtonUI();
 
     private KeyListener keyListener = null;
 
@@ -106,14 +106,7 @@ public class BasicButtonUI extends ButtonUI{
      * @return an instance of {@code BasicButtonUI}
      */
     public static ComponentUI createUI(JComponent c) {
-        AppContext appContext = AppContext.getAppContext();
-        BasicButtonUI buttonUI =
-                (BasicButtonUI) appContext.get(BASIC_BUTTON_UI_KEY);
-        if (buttonUI == null) {
-            buttonUI = new BasicButtonUI();
-            appContext.put(BASIC_BUTTON_UI_KEY, buttonUI);
-        }
-        return buttonUI;
+        return UI;
     }
 
     /**
@@ -430,7 +423,7 @@ public class BasicButtonUI extends ButtonUI{
     /**
      * Method which renders the text of the current button.
      *
-     * As of Java 2 platform v 1.4 this method should not be used or overriden.
+     * As of Java 2 platform v 1.4 this method should not be used or overridden.
      * Use the paintText method which takes the AbstractButton argument.
      *
      * @param g an instance of {@code Graphics}
@@ -476,7 +469,7 @@ public class BasicButtonUI extends ButtonUI{
         paintText(g, (JComponent)b, textRect, text);
     }
 
-    // Method signature defined here overriden in subclasses.
+    // Method signature defined here overridden in subclasses.
     // Perhaps this class should be abstract?
     /**
      * Paints a focused button.
@@ -598,15 +591,7 @@ public class BasicButtonUI extends ButtonUI{
 
     private String layout(AbstractButton b, FontMetrics fm,
                           int width, int height) {
-        Insets i;
-
-        final View v = (View)b.getClientProperty(BasicHTML.propertyKey);
-        if (v != null) {
-            i = new Insets(0, 0, 0, 0);
-        } else {
-            i = b.getInsets();
-        }
-
+        Insets i = b.getInsets();
         viewRect.x = i.left;
         viewRect.y = i.top;
         viewRect.width = width - (i.right + viewRect.x);

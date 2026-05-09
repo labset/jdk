@@ -55,13 +55,20 @@ public final class OperationTrackers {
         long getOutstandingHttpOperations();
         // The number of active HTTP/2 streams
         long getOutstandingHttp2Streams();
+        // The number of active HTTP/3 streams
+        long getOutstandingHttp3Streams();
         // The number of active WebSockets
         long getOutstandingWebSocketOperations();
         // number of TCP connections still opened
         long getOutstandingTcpConnections();
+        // number of body subscribers not yet completed or canceled
+        long getOutstandingSubscribers();
         // Whether the facade returned to the
         // user is still referenced
         boolean isFacadeReferenced();
+        // Whether the implementation of the facade
+        // is still referenced
+        boolean isImplementationReferenced();
         // whether the Selector Manager thread is still running
         boolean isSelectorAlive();
         // The name of the object being tracked.

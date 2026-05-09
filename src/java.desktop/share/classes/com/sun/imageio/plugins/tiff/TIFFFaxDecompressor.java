@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -591,6 +591,7 @@ class TIFFFaxDecompressor extends TIFFDecompressor {
      * Invokes the superclass method and then sets instance variables on
      * the basis of the metadata set on this decompressor.
      */
+    @Override
     public void beginDecoding() {
         super.beginDecoding();
 
@@ -627,6 +628,7 @@ class TIFFFaxDecompressor extends TIFFDecompressor {
         }
     }
 
+    @Override
     public void decodeRaw(byte[] b, int dstOffset,
                           int pixelBitStride, // will always be 1
                           int scanlineStride) throws IOException {
@@ -1432,7 +1434,7 @@ class TIFFFaxDecompressor extends TIFFDecompressor {
         int ces = this.changingElemSize;
 
         // If the previous match was at an odd element, we still
-        // have to search the preceeding element.
+        // have to search the preceding element.
         // int start = lastChangingElement & ~0x1;
         int start = lastChangingElement > 0 ? lastChangingElement - 1 : 0;
         if (isWhite) {

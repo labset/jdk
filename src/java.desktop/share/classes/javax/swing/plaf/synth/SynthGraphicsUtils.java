@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2002, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2002, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,8 +24,6 @@
  */
 package javax.swing.plaf.synth;
 
-import sun.swing.MenuItemLayoutHelper;
-import sun.swing.SwingUtilities2;
 import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -37,12 +35,15 @@ import java.awt.Rectangle;
 
 import javax.swing.ButtonModel;
 import javax.swing.Icon;
-import javax.swing.JButton;
 import javax.swing.JComponent;
 import javax.swing.JMenuItem;
 import javax.swing.SwingUtilities;
 import javax.swing.plaf.basic.BasicHTML;
 import javax.swing.text.View;
+
+import com.sun.java.swing.SwingUtilities3;
+import sun.swing.MenuItemLayoutHelper;
+import sun.swing.SwingUtilities2;
 
 /**
  * Wrapper for primitive graphics calls.
@@ -392,19 +393,10 @@ public class SynthGraphicsUtils {
         FontMetrics fm = SwingUtilities2.getFontMetrics(c, g);
         Insets insets = SynthLookAndFeel.getPaintingInsets(ss, paintInsets);
 
-        final View v = (View)c.getClientProperty(BasicHTML.propertyKey);
-
-        if (c instanceof JButton && v != null) {
-            paintViewR.x = 0;
-            paintViewR.y = 0;
-            paintViewR.width = c.getWidth();
-            paintViewR.height = c.getHeight();
-        } else {
-            paintViewR.x = insets.left;
-            paintViewR.y = insets.top;
-            paintViewR.width = c.getWidth() - (insets.left + insets.right);
-            paintViewR.height = c.getHeight() - (insets.top + insets.bottom);
-        }
+        paintViewR.x = insets.left;
+        paintViewR.y = insets.top;
+        paintViewR.width = c.getWidth() - (insets.left + insets.right);
+        paintViewR.height = c.getHeight() - (insets.top + insets.bottom);
 
         paintIconR.x = paintIconR.y = paintIconR.width = paintIconR.height = 0;
         paintTextR.x = paintTextR.y = paintTextR.width = paintTextR.height = 0;
@@ -430,6 +422,7 @@ public class SynthGraphicsUtils {
         }
 
         if (text != null) {
+            View v = (View) c.getClientProperty(BasicHTML.propertyKey);
             if (v != null) {
                 v.paint(g, paintTextR);
             } else {
@@ -545,8 +538,8 @@ public class SynthGraphicsUtils {
              result.height += insets.top + insets.bottom;
          }
 
-         // if the width is even, bump it up one. This is critical
-         // for the focus dash lhne to draw properly
+         // if the width is even, bump it up by one. This is critical
+         // for the focus dash line to draw properly
          if (result.width % 2 == 0) {
              result.width++;
          }
@@ -560,15 +553,6 @@ public class SynthGraphicsUtils {
          return result;
      }
 
-    static void applyInsets(Rectangle rect, Insets insets, boolean leftToRight) {
-        if (insets != null) {
-            rect.x += (leftToRight ? insets.left : insets.right);
-            rect.y += insets.top;
-            rect.width -= (leftToRight ? insets.right : insets.left) + rect.x;
-            rect.height -= (insets.bottom + rect.y);
-        }
-    }
-
     static void paint(SynthContext context, SynthContext accContext, Graphics g,
                Icon checkIcon, Icon arrowIcon, String acceleratorDelimiter,
                int defaultTextIconGap, String propertyPrefix) {
@@ -578,7 +562,7 @@ public class SynthGraphicsUtils {
 
         Rectangle viewRect = new Rectangle(0, 0, mi.getWidth(), mi.getHeight());
         boolean leftToRight = SynthLookAndFeel.isLeftToRight(mi);
-        applyInsets(viewRect, mi.getInsets(), leftToRight);
+        SwingUtilities3.applyInsets(viewRect, mi.getInsets(), leftToRight);
 
         SynthMenuItemLayoutHelper lh = new SynthMenuItemLayoutHelper(
                 context, accContext, mi, checkIcon, arrowIcon, viewRect,

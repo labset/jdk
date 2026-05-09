@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2022 THL A29 Limited, a Tencent company. All rights reserved.
+ * Copyright (C) 2022, Tencent. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -54,10 +54,8 @@ public final class GssContextCleanup {
         context = null;
 
         // Check if the object has been collected.
-        ForceGC gc = new ForceGC();
-        if (!gc.await(() -> weakRef.get() == null)) {
+        if (!ForceGC.wait(() -> weakRef.refersTo(null))) {
             throw new RuntimeException("GSSContext object is not released");
         }
     }
 }
-

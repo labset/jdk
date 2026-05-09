@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -35,24 +35,28 @@ import jtreg.SkippedException;
  * @test id=xcomp-process
  * @bug 8193124
  * @summary Test the clhsdb 'findpc' command with Xcomp on live process
- * @requires vm.compMode != "Xcomp"
  * @requires vm.hasSA
+ * @requires vm.gc != "Z"
+ * @requires vm.compMode != "Xcomp"
+ * @requires (os.arch != "riscv64" | !(vm.cpu.features ~= ".*qemu.*"))
  * @requires vm.compiler1.enabled
  * @requires vm.opt.DeoptimizeALot != true
  * @library /test/lib
- * @run main/othervm/timeout=480 ClhsdbFindPC true false
+ * @run main/othervm/timeout=1920 ClhsdbFindPC true false
  */
 
 /**
  * @test id=xcomp-core
  * @bug 8193124
  * @summary Test the clhsdb 'findpc' command with Xcomp on core file
- * @requires vm.compMode != "Xcomp"
  * @requires vm.hasSA
+ * @requires !vm.ubsan
+ * @requires vm.gc != "Z"
+ * @requires vm.compMode != "Xcomp"
  * @requires vm.compiler1.enabled
  * @requires vm.opt.DeoptimizeALot != true
  * @library /test/lib
- * @run main/othervm/timeout=480 ClhsdbFindPC true true
+ * @run main/othervm/timeout=1920 ClhsdbFindPC true true
  */
 
 /**
@@ -60,9 +64,11 @@ import jtreg.SkippedException;
  * @bug 8193124
  * @summary Test the clhsdb 'findpc' command w/o Xcomp on live process
  * @requires vm.hasSA
+ * @requires vm.gc != "Z"
+ * @requires (os.arch != "riscv64" | !(vm.cpu.features ~= ".*qemu.*"))
  * @requires vm.compiler1.enabled
  * @library /test/lib
- * @run main/othervm/timeout=480 ClhsdbFindPC false false
+ * @run main/othervm/timeout=1920 ClhsdbFindPC false false
  */
 
 /**
@@ -70,9 +76,11 @@ import jtreg.SkippedException;
  * @bug 8193124
  * @summary Test the clhsdb 'findpc' command w/o Xcomp on core file
  * @requires vm.hasSA
+ * @requires !vm.ubsan
+ * @requires vm.gc != "Z"
  * @requires vm.compiler1.enabled
  * @library /test/lib
- * @run main/othervm/timeout=480 ClhsdbFindPC false true
+ * @run main/othervm/timeout=1920 ClhsdbFindPC false true
  */
 
 public class ClhsdbFindPC {
@@ -93,9 +101,9 @@ public class ClhsdbFindPC {
             theApp = new LingeredApp();
             theApp.setForceCrash(withCore);
             if (withXcomp) {
-                LingeredApp.startApp(theApp, "-Xcomp");
+                LingeredApp.startApp(theApp, "-Xcomp", CoreUtils.getAlwaysPretouchArg(withCore));
             } else {
-                LingeredApp.startApp(theApp, "-Xint");
+                LingeredApp.startApp(theApp, "-Xint", CoreUtils.getAlwaysPretouchArg(withCore));
             }
             System.out.print("Started LingeredApp ");
             if (withXcomp) {
@@ -215,6 +223,15 @@ public class ClhsdbFindPC {
             cmds = List.of(cmdStr);
             expStrMap = new HashMap<>();
             expStrMap.put(cmdStr, List.of("Is of type JavaThread"));
+            runTest(withCore, cmds, expStrMap);
+
+            // Use findpc on an address that is only 4 byte aligned and is the
+            // last 4 bytes of a 4k page. This is for testing JDK-8292201.
+            String badAddress = tid.substring(0, tid.length() - 3) + "ffc";
+            cmdStr = "findpc " + badAddress;
+            cmds = List.of(cmdStr);
+            expStrMap = new HashMap<>();
+            expStrMap.put(cmdStr, List.of("In unknown location"));
             runTest(withCore, cmds, expStrMap);
 
             // Run findpc on a java stack address. We can find one in the jstack output.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2004, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2004, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,6 @@ package sun.jvm.hotspot.utilities;
 import java.io.*;
 import sun.jvm.hotspot.debugger.*;
 import sun.jvm.hotspot.gc.shared.OopStorage;
-import sun.jvm.hotspot.memory.*;
 import sun.jvm.hotspot.oops.*;
 import sun.jvm.hotspot.runtime.*;
 
@@ -122,6 +121,9 @@ public abstract class AbstractHeapGraphWriter implements HeapGraphWriter {
                 // write JNI global handles
                 writeGlobalJNIHandles();
 
+                // write classes in null class loader data
+                writeStickyClasses();
+
         } catch (RuntimeException re) {
             handleRuntimeException(re);
         }
@@ -167,6 +169,9 @@ public abstract class AbstractHeapGraphWriter implements HeapGraphWriter {
                 handleRuntimeException(re);
             }
         }
+    }
+
+    protected void writeStickyClasses() throws IOException {
     }
 
     protected void writeGlobalJNIHandle(Address handleAddr) throws IOException {
@@ -437,8 +442,8 @@ public abstract class AbstractHeapGraphWriter implements HeapGraphWriter {
     protected void handleRuntimeException(RuntimeException re)
         throws IOException {
         Throwable cause = re.getCause();
-        if (cause != null && cause instanceof IOException) {
-            throw (IOException) cause;
+        if (cause instanceof IOException io) {
+            throw io;
         } else {
             // some other RuntimeException, just re-throw
             throw re;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,15 +30,39 @@ import java.io.IOException;
  * Default PollerProvider for Windows based on wepoll.
  */
 class DefaultPollerProvider extends PollerProvider {
-    DefaultPollerProvider() { }
+    DefaultPollerProvider(Poller.Mode mode) {
+        if (mode != Poller.Mode.SYSTEM_THREADS) {
+            throw new UnsupportedOperationException();
+        }
+        super(mode);
+    }
+
+    DefaultPollerProvider() {
+        this(Poller.Mode.SYSTEM_THREADS);
+    }
 
     @Override
-    Poller readPoller() throws IOException {
+    int defaultReadPollers() {
+        int ncpus = Runtime.getRuntime().availableProcessors();
+        return Math.max(Integer.highestOneBit(ncpus / 8), 1);
+    }
+
+    @Override
+    int fdValToIndex(int fdVal, int toIndex) {
+        return (fdVal >> 2) & (toIndex - 1);
+    }
+
+    @Override
+    Poller readPoller(boolean subPoller) throws IOException {
+        if (subPoller)
+            throw new UnsupportedOperationException();
         return new WEPollPoller(true);
     }
 
     @Override
-    Poller writePoller() throws IOException {
+    Poller writePoller(boolean subPoller) throws IOException {
+        if (subPoller)
+            throw new UnsupportedOperationException();
         return new WEPollPoller(false);
     }
 }

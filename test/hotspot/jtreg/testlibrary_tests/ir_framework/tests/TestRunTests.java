@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -51,10 +51,10 @@ public class TestRunTests {
         TestFramework.run();
         try {
             TestFramework.run(BadStandalone.class);
-            Utils.shouldHaveThrownException(baos.toString());
+            Asserts.fail("Should have thrown exception");
         } catch (IRViolationException e) {
             System.setOut(oldOut);
-            String[] matches = { "test(int)", "test2(int)", "Failed IR Rules (2)"};
+            String[] matches = { "test", "test2", "Failed IR Rules (2)"};
             Arrays.stream(matches).forEach(m -> Asserts.assertTrue(e.getExceptionInfo().contains(m)));
             Asserts.assertEQ(e.getExceptionInfo().split("STANDALONE mode", -1).length - 1, 2);
         }

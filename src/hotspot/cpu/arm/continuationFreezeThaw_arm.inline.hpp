@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,6 +48,10 @@ void FreezeBase::adjust_interpreted_frame_unextended_sp(frame& f) {
   Unimplemented();
 }
 
+inline void FreezeBase::prepare_freeze_interpreted_top_frame(frame& f) {
+  Unimplemented();
+}
+
 inline void FreezeBase::relativize_interpreted_frame_metadata(const frame& f, const frame& hf) {
   Unimplemented();
 }
@@ -56,7 +60,20 @@ inline void FreezeBase::patch_pd(frame& hf, const frame& caller) {
   Unimplemented();
 }
 
+inline void FreezeBase::patch_pd_unused(intptr_t* sp) {
+  Unimplemented();
+}
+
 inline void FreezeBase::patch_stack_pd(intptr_t* frame_sp, intptr_t* heap_sp) {
+  Unimplemented();
+}
+
+inline intptr_t* AnchorMark::anchor_mark_set_pd() {
+  Unimplemented();
+  return nullptr;
+}
+
+inline void AnchorMark::anchor_mark_clear_pd() {
   Unimplemented();
 }
 
@@ -70,24 +87,35 @@ template<typename FKind> frame ThawBase::new_stack_frame(const frame& hf, frame&
   return frame();
 }
 
-inline void ThawBase::set_interpreter_frame_bottom(const frame& f, intptr_t* bottom) {
-  Unimplemented();
-}
-
 inline void ThawBase::derelativize_interpreted_frame_metadata(const frame& hf, const frame& f) {
   Unimplemented();
 }
 
 inline intptr_t* ThawBase::align(const frame& hf, intptr_t* frame_sp, frame& caller, bool bottom) {
   Unimplemented();
-  return NULL;
+  return nullptr;
 }
 
 inline void ThawBase::patch_pd(frame& f, const frame& caller) {
   Unimplemented();
 }
 
-void ThawBase::patch_chunk_pd(intptr_t* sp) {
+inline void ThawBase::patch_pd(frame& f, intptr_t* caller_sp) {
+  Unimplemented();
+}
+
+inline intptr_t* ThawBase::push_cleanup_continuation() {
+  Unimplemented();
+  return nullptr;
+}
+
+inline intptr_t* ThawBase::push_preempt_adapter() {
+  Unimplemented();
+  return nullptr;
+}
+
+template <typename ConfigT>
+inline void Thaw<ConfigT>::patch_caller_links(intptr_t* sp, intptr_t* bottom) {
   Unimplemented();
 }
 

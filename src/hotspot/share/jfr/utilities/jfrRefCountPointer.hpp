@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,7 +26,7 @@
 #define SHARE_JFR_UTILITIES_JFRREFCOUNTPOINTER_HPP
 
 #include "jfr/utilities/jfrAllocation.hpp"
-#include "runtime/atomic.hpp"
+#include "runtime/atomicAccess.hpp"
 
 template <typename T>
 class RefCountHandle {
@@ -34,23 +34,23 @@ class RefCountHandle {
   const T* _ptr;
 
   RefCountHandle(const T* ptr) : _ptr(ptr) {
-    assert(_ptr != NULL, "invariant");
+    assert(_ptr != nullptr, "invariant");
     _ptr->add_ref();
   }
 
  public:
-  RefCountHandle() : _ptr(NULL) {}
+  RefCountHandle() : _ptr(nullptr) {}
 
   RefCountHandle(const RefCountHandle<T>& rhs) : _ptr(rhs._ptr) {
-    if (_ptr != NULL) {
+    if (_ptr != nullptr) {
       _ptr->add_ref();
     }
   }
 
   ~RefCountHandle() {
-    if (_ptr != NULL) {
+    if (_ptr != nullptr) {
       _ptr->remove_ref();
-      _ptr = NULL;
+      _ptr = nullptr;
     }
   }
 
@@ -70,7 +70,7 @@ class RefCountHandle {
   }
 
   bool valid() const {
-    return _ptr != NULL;
+    return _ptr != nullptr;
   }
 
   const T& operator->() const {
@@ -112,11 +112,11 @@ class MultiThreadedRefCounter {
   MultiThreadedRefCounter() : _refs(0) {}
 
   void inc() const {
-    Atomic::inc(&_refs, memory_order_relaxed);
+    AtomicAccess::inc(&_refs, memory_order_relaxed);
   }
 
   bool dec() const {
-    if (0 == Atomic::sub(&_refs, 1, memory_order_release)) {
+    if (0 == AtomicAccess::sub(&_refs, 1, memory_order_release)) {
       OrderAccess::acquire();
       return true;
     }
@@ -124,7 +124,7 @@ class MultiThreadedRefCounter {
   }
 
   intptr_t current() const {
-    return Atomic::load(&_refs);
+    return AtomicAccess::load(&_refs);
   }
 };
 
@@ -157,7 +157,7 @@ class RefCountPointer : public JfrCHeapObj {
   }
 
   RefCountPointer(const T* ptr) : _ptr(ptr), _refs() {
-    assert(_ptr != NULL, "invariant");
+    assert(_ptr != nullptr, "invariant");
   }
 
  public:

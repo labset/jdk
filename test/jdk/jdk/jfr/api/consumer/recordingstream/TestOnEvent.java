@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -32,10 +32,10 @@ import jdk.jfr.consumer.RecordingStream;
 /**
  * @test
  * @summary Tests RecordingStream::onEvent(...)
- * @key jfr
+ * @requires vm.flagless
  * @requires vm.hasJFR
  * @library /test/lib /test/jdk
- * @run main/othervm jdk.jfr.api.consumer.recordingstream.TestOnEvent
+ * @run main/othervm -Xlog:jfr+system+streaming=debug jdk.jfr.api.consumer.recordingstream.TestOnEvent
  */
 public class TestOnEvent {
 
@@ -154,12 +154,14 @@ public class TestOnEvent {
             EventProducer p = new EventProducer();
             p.start();
             Thread addHandler = new Thread(() ->  {
+                log("About to add handler");
                 r.onEvent(e -> {
                     // Got event, close stream
                     log("Executing onEvent");
                     r.close();
                     log("RecordingStream closed");
                 });
+                log("Handler added");
             });
             r.onFlush(() ->  {
                 // Only add handler once

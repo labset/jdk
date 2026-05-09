@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -44,7 +44,6 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import sun.jvm.hotspot.ci.ciEnv;
 import sun.jvm.hotspot.code.CodeBlob;
 import sun.jvm.hotspot.code.CodeCacheVisitor;
 import sun.jvm.hotspot.code.NMethod;
@@ -61,13 +60,10 @@ import sun.jvm.hotspot.oops.InstanceKlass;
 import sun.jvm.hotspot.oops.Klass;
 import sun.jvm.hotspot.oops.Metadata;
 import sun.jvm.hotspot.oops.Method;
-import sun.jvm.hotspot.oops.MethodData;
 import sun.jvm.hotspot.oops.Oop;
 import sun.jvm.hotspot.oops.RawHeapVisitor;
 import sun.jvm.hotspot.oops.Symbol;
 import sun.jvm.hotspot.oops.UnknownOopException;
-import sun.jvm.hotspot.opto.Compile;
-import sun.jvm.hotspot.opto.InlineTree;
 import sun.jvm.hotspot.runtime.CompiledVFrame;
 import sun.jvm.hotspot.runtime.CompilerThread;
 import sun.jvm.hotspot.runtime.JavaThread;
@@ -197,7 +193,7 @@ public class CommandProcessor {
                     add(w[i], t);
                 }
             }
-            tokens = (String[])t.toArray(new String[0]);
+            tokens = t.toArray(new String[0]);
             i = 0;
             length = tokens.length;
 
@@ -562,57 +558,6 @@ public class CommandProcessor {
                 }
             }
         },
-        new Command("dumpreplaydata", "dumpreplaydata { <address > | -a | <thread_id> }", false) {
-            // This is used to dump replay data from ciInstanceKlass, ciMethodData etc
-            // default file name is replay.txt, also if java crashes in compiler
-            // thread, this file will be dumped in error processing.
-            public void doit(Tokens t) {
-                if (t.countTokens() != 1) {
-                    usage();
-                    return;
-                }
-                String name = t.nextToken();
-                Address a = null;
-                try {
-                    a = VM.getVM().getDebugger().parseAddress(name);
-                } catch (NumberFormatException e) { }
-                if (a != null) {
-                    // only nmethod, Method, MethodData and InstanceKlass needed to
-                    // dump replay data
-
-                    CodeBlob cb = VM.getVM().getCodeCache().findBlob(a);
-                    if (cb != null && (cb instanceof NMethod)) {
-                        ((NMethod)cb).dumpReplayData(out);
-                        return;
-                    }
-                    // assume it is Metadata
-                    Metadata meta = Metadata.instantiateWrapperFor(a);
-                    if (meta != null) {
-                        meta.dumpReplayData(out);
-                    } else {
-                        usage();
-                        return;
-                    }
-                }
-                // Not an address
-                boolean all = name.equals("-a");
-                Threads threads = VM.getVM().getThreads();
-                for (int i = 0; i < threads.getNumberOfThreads(); i++) {
-                    JavaThread thread = threads.getJavaThreadAt(i);
-                    ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                    thread.printThreadIDOn(new PrintStream(bos));
-                    if (all || bos.toString().equals(name)) {
-                        if (thread instanceof CompilerThread) {
-                            CompilerThread ct = (CompilerThread)thread;
-                            ciEnv env = ct.env();
-                            if (env != null) {
-                               env.dumpReplayData(out);
-                            }
-                        }
-                    }
-                }
-            }
-        },
         new Command("buildreplayjars", "buildreplayjars [ all | app | boot ]  | [ prefix ]", false) {
             // This is used to dump jar files of all the classes
             // loaded in the core.  Everything with null classloader
@@ -768,7 +713,7 @@ public class CommandProcessor {
                           });
                     for (int i = 0; i < keys.length; i++) {
                         out.print("  ");
-                        out.println(((Command)commands.get(keys[i])).usage);
+                        out.println(commands.get(keys[i]).usage);
                     }
                 }
             }
@@ -914,44 +859,8 @@ public class CommandProcessor {
                 }
             }
         },
-        new Command("printmdo", "printmdo [ -a | expression ]", false) {
-            // Print every MDO in the heap or the one referenced by expression.
-            public void doit(Tokens t) {
-                if (t.countTokens() != 1) {
-                    usage();
-                } else {
-                    String s = t.nextToken();
-                    if (s.equals("-a")) {
-                        ClassLoaderDataGraph cldg = VM.getVM().getClassLoaderDataGraph();
-                        cldg.classesDo(new ClassLoaderDataGraph.ClassVisitor() {
-                                public void visit(Klass k) {
-                                    if (k instanceof InstanceKlass) {
-                                        MethodArray methods = ((InstanceKlass)k).getMethods();
-                                        for (int i = 0; i < methods.length(); i++) {
-                                            Method m = methods.at(i);
-                                            MethodData mdo = m.getMethodData();
-                                            if (mdo != null) {
-                                                out.println("MethodData " + mdo.getAddress() + " for " +
-                                                    "method " + m.getMethodHolder().getName().asString() + "." +
-                                                    m.getName().asString() +
-                                                            m.getSignature().asString() + "@" + m.getAddress());
-                                                mdo.printDataOn(out);
-                                    }
-                                }
-                                    }
-                                }
-                            }
-                            );
-                    } else {
-                        Address a = VM.getVM().getDebugger().parseAddress(s);
-                        MethodData mdo = (MethodData) Metadata.instantiateWrapperFor(a);
-                        mdo.printDataOn(out);
-                    }
-                }
-            }
-        },
         new Command("printall", "printall", false) {
-            // Print every MDO in the heap or the one referenced by expression.
+            // Print every Method for every class loaded.
             public void doit(Tokens t) {
                 if (t.countTokens() != 0) {
                     usage();
@@ -970,94 +879,6 @@ public class CommandProcessor {
                             }
                         }
                         );
-                }
-            }
-        },
-        new Command("dumpideal", "dumpideal { -a | id }", false) {
-            // Do a full dump of the nodes reachable from root in each compiler thread.
-            public void doit(Tokens t) {
-                if (t.countTokens() != 1) {
-                    usage();
-                } else {
-                    String name = t.nextToken();
-                    boolean all = name.equals("-a");
-                    Threads threads = VM.getVM().getThreads();
-                    for (int i = 0; i < threads.getNumberOfThreads(); i++) {
-                        JavaThread thread = threads.getJavaThreadAt(i);
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        thread.printThreadIDOn(new PrintStream(bos));
-                        if (all || bos.toString().equals(name)) {
-                          if (thread instanceof CompilerThread) {
-                            CompilerThread ct = (CompilerThread)thread;
-                            out.println(ct);
-                            ciEnv env = ct.env();
-                            if (env != null) {
-                              Compile c = env.compilerData();
-                              c.root().dump(9999, out);
-                            } else {
-                              out.println("  not compiling");
-                            }
-                          }
-                        }
-                    }
-                }
-            }
-        },
-        new Command("dumpcfg", "dumpcfg { -a | id }", false) {
-            // Dump the PhaseCFG for every compiler thread that has one live.
-            public void doit(Tokens t) {
-                if (t.countTokens() != 1) {
-                    usage();
-                } else {
-                    String name = t.nextToken();
-                    boolean all = name.equals("-a");
-                    Threads threads = VM.getVM().getThreads();
-                    for (int i = 0; i < threads.getNumberOfThreads(); i++) {
-                        JavaThread thread = threads.getJavaThreadAt(i);
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        thread.printThreadIDOn(new PrintStream(bos));
-                        if (all || bos.toString().equals(name)) {
-                          if (thread instanceof CompilerThread) {
-                            CompilerThread ct = (CompilerThread)thread;
-                            out.println(ct);
-                            ciEnv env = ct.env();
-                            if (env != null) {
-                              Compile c = env.compilerData();
-                              c.cfg().dump(out);
-                            }
-                          }
-                        }
-                    }
-                }
-            }
-        },
-        new Command("dumpilt", "dumpilt { -a | id }", false) {
-            // dumps the InlineTree of a C2 compile
-            public void doit(Tokens t) {
-                if (t.countTokens() != 1) {
-                    usage();
-                } else {
-                    String name = t.nextToken();
-                    boolean all = name.equals("-a");
-                    Threads threads = VM.getVM().getThreads();
-                    for (int i = 0; i < threads.getNumberOfThreads(); i++) {
-                        JavaThread thread = threads.getJavaThreadAt(i);
-                        ByteArrayOutputStream bos = new ByteArrayOutputStream();
-                        thread.printThreadIDOn(new PrintStream(bos));
-                        if (all || bos.toString().equals(name)) {
-                            if (thread instanceof CompilerThread) {
-                                CompilerThread ct = (CompilerThread)thread;
-                                ciEnv env = ct.env();
-                                if (env != null) {
-                                    Compile c = env.compilerData();
-                                    InlineTree ilt = c.ilt();
-                                    if (ilt != null) {
-                                        ilt.print(out);
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         },
@@ -1085,7 +906,7 @@ public class CommandProcessor {
                         n = n.getSuperclass();
                     }
                     while (!pending.isEmpty()) {
-                        n = (Type)pending.pop();
+                        n = pending.pop();
                         dumpType(n);
                         emitted.add(n.getName());
                     }
@@ -1143,13 +964,22 @@ public class CommandProcessor {
                  histo.run(out, err);
             }
         },
-        new Command("jstack", "jstack [-v]", false) {
+        new Command("jstack", "jstack [-v] [-l]", false) {
             public void doit(Tokens t) {
                 boolean verbose = false;
-                if (t.countTokens() > 0 && t.nextToken().equals("-v")) {
-                    verbose = true;
+                boolean concurrentLocks = false;
+                while (t.countTokens() > 0) {
+                    String arg = t.nextToken();
+                    if (arg.equals("-v")) {
+                        verbose = true;
+                    } else if (arg.equals("-l")) {
+                        concurrentLocks = true;
+                    } else {
+                        usage();
+                        return;
+                    }
                 }
-                StackTrace jstack = new StackTrace(verbose, true);
+                StackTrace jstack = new StackTrace(verbose, concurrentLocks);
                 jstack.run(out);
             }
         },
@@ -1201,13 +1031,22 @@ public class CommandProcessor {
                 pmap.run(out, debugger.getAgent().getDebugger());
             }
         },
-        new Command("pstack", "pstack [-v]", false) {
+        new Command("pstack", "pstack [-v] [-l]", false) {
             public void doit(Tokens t) {
                 boolean verbose = false;
-                if (t.countTokens() > 0 && t.nextToken().equals("-v")) {
-                    verbose = true;
+                boolean concurrentLocks = false;
+                while (t.countTokens() > 0) {
+                    String arg = t.nextToken();
+                    if (arg.equals("-v")) {
+                        verbose = true;
+                    } else if (arg.equals("-l")) {
+                        concurrentLocks = true;
+                    } else {
+                        usage();
+                        return;
+                    }
                 }
-                PStack pstack = new PStack(verbose, true, debugger.getAgent());
+                PStack pstack = new PStack(verbose, concurrentLocks, debugger.getAgent());
                 pstack.run(out, debugger.getAgent().getDebugger());
             }
         },
@@ -1226,7 +1065,7 @@ public class CommandProcessor {
                 if (t.countTokens() == 0) {
                     out.println("echo is " + doEcho);
                 } else if (t.countTokens() == 1) {
-                    doEcho = Boolean.valueOf(t.nextToken()).booleanValue();
+                    doEcho = Boolean.parseBoolean(t.nextToken());
                 } else {
                     usage();
                 }
@@ -1238,7 +1077,7 @@ public class CommandProcessor {
                     out.println("versioncheck is " +
                                 (System.getProperty("sun.jvm.hotspot.runtime.VM.disableVersionCheck") == null));
                 } else if (t.countTokens() == 1) {
-                    if (Boolean.valueOf(t.nextToken()).booleanValue()) {
+                    if (Boolean.parseBoolean(t.nextToken())) {
                         System.clearProperty("sun.jvm.hotspot.runtime.VM.disableVersionCheck");
                     } else {
                         System.setProperty("sun.jvm.hotspot.runtime.VM.disableVersionCheck", "true");
@@ -1302,7 +1141,7 @@ public class CommandProcessor {
                     }
                 } else if (t.countTokens() == 2) {
                     String name = t.nextToken();
-                    Integer value = Integer.valueOf(t.nextToken());
+                    int value = Integer.parseInt(t.nextToken());
                     db.addIntConstant(name, value);
                 }
             }
@@ -1325,7 +1164,7 @@ public class CommandProcessor {
                     }
                 } else if (t.countTokens() == 2) {
                     String name = t.nextToken();
-                    Long value = Long.valueOf(t.nextToken());
+                    long value = Long.parseLong(t.nextToken());
                     db.addLongConstant(name, value);
                 }
             }
@@ -1352,7 +1191,7 @@ public class CommandProcessor {
                     // The field's Type must already be in the database -- no exceptions
                     Type fieldType = agent.getTypeDataBase().lookupType(t.nextToken());
 
-                    boolean isStatic = Boolean.valueOf(t.nextToken()).booleanValue();
+                    boolean isStatic = Boolean.parseBoolean(t.nextToken());
                     long offset = Long.parseLong(t.nextToken());
                     Address staticAddress = parseAddress(t.nextToken());
                     if (isStatic && staticAddress == null) {
@@ -1414,9 +1253,9 @@ public class CommandProcessor {
                     if (superclassName.equals("null")) {
                         superclassName = null;
                     }
-                    boolean isOop = Boolean.valueOf(t.nextToken()).booleanValue();
-                    boolean isInteger = Boolean.valueOf(t.nextToken()).booleanValue();
-                    boolean isUnsigned = Boolean.valueOf(t.nextToken()).booleanValue();
+                    boolean isOop = Boolean.parseBoolean(t.nextToken());
+                    boolean isInteger = Boolean.parseBoolean(t.nextToken());
+                    boolean isUnsigned = Boolean.parseBoolean(t.nextToken());
                     long size = Long.parseLong(t.nextToken());
 
                     BasicType type = null;
@@ -1481,7 +1320,7 @@ public class CommandProcessor {
                             n = n.getSuperclass();
                         }
                         while (!pending.isEmpty()) {
-                            n = (Type)pending.pop();
+                            n = pending.pop();
                             dumpType(n);
                             emitted.add(n.getName());
                         }
@@ -1726,7 +1565,7 @@ public class CommandProcessor {
                         }
                     }
                     if (!all) {
-                        out.println("Couldn't find thread " + name);
+                        out.println("Couldn't find thread " + id);
                     }
                 }
             }
@@ -1807,7 +1646,7 @@ public class CommandProcessor {
                 if (t.countTokens() != 1) {
                     usage();
                 } else {
-                    verboseExceptions = Boolean.valueOf(t.nextToken()).booleanValue();
+                    verboseExceptions = Boolean.parseBoolean(t.nextToken());
                 }
             }
         },
@@ -1816,7 +1655,7 @@ public class CommandProcessor {
                 if (t.countTokens() != 1) {
                     usage();
                 } else {
-                    Assert.ASSERTS_ENABLED = Boolean.valueOf(t.nextToken()).booleanValue();
+                    Assert.ASSERTS_ENABLED = Boolean.parseBoolean(t.nextToken());
                 }
             }
         },
@@ -1986,7 +1825,7 @@ public class CommandProcessor {
     private boolean doEcho = false;
 
     private Command findCommand(String key) {
-        return (Command)commands.get(key);
+        return commands.get(key);
     }
 
     public void printPrompt() {
@@ -2082,17 +1921,17 @@ public class CommandProcessor {
 
                     String cmd = m.group(2);
                     if (cmd.equals("!!")) {
-                        result.append((String)history.get(history.size() - 1));
+                        result.append(history.get(history.size() - 1));
                     } else if (cmd.equals("!!-")) {
-                        Tokens item = new Tokens((String)history.get(history.size() - 1));
+                        Tokens item = new Tokens(history.get(history.size() - 1));
                         item.trim(1);
                         result.append(item.join(" "));
                     } else if (cmd.equals("!*")) {
-                        Tokens item = new Tokens((String)history.get(history.size() - 1));
+                        Tokens item = new Tokens(history.get(history.size() - 1));
                         item.nextToken();
                         result.append(item.join(" "));
                     } else if (cmd.equals("!$")) {
-                        Tokens item = new Tokens((String)history.get(history.size() - 1));
+                        Tokens item = new Tokens(history.get(history.size() - 1));
                         result.append(item.at(item.countTokens() - 1));
                     } else {
                         String tail = cmd.substring(1);
@@ -2115,13 +1954,13 @@ public class CommandProcessor {
                             if (index > size) {
                                 err.println("No such history item");
                             } else {
-                                result.append((String)history.get(index));
+                                result.append(history.get(index));
                             }
                             break;
                         }
                         default: {
                             for (int i = history.size() - 1; i >= 0; i--) {
-                                String s = (String)history.get(i);
+                                String s = history.get(i);
                                 if (s.startsWith(tail)) {
                                     result.append(s);
                                     break; // only capture the most recent match in the history

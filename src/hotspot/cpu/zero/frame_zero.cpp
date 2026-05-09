@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2007, 2021, Red Hat, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,7 +23,6 @@
  *
  */
 
-#include "precompiled.hpp"
 #include "gc/shared/collectedHeap.hpp"
 #include "interpreter/interpreter.hpp"
 #include "interpreter/interpreterRuntime.hpp"
@@ -53,7 +52,7 @@ bool frame::is_fake_stub_frame() const {
 
 frame frame::sender_for_entry_frame(RegisterMap *map) const {
   assert(zeroframe()->is_entry_frame(), "wrong type of frame");
-  assert(map != NULL, "map must be set");
+  assert(map != nullptr, "map must be set");
   assert(!entry_frame_is_first(), "next Java fp must be non zero");
   assert(entry_frame_call_wrapper()->anchor()->last_Java_sp() == sender_sp(),
          "sender should be next Java frame");
@@ -72,6 +71,11 @@ bool frame::upcall_stub_frame_is_first() const {
   return false;
 }
 
+JavaThread** frame::saved_thread_address(const frame& f) {
+  Unimplemented();
+  return nullptr;
+}
+
 frame frame::sender_for_nonentry_frame(RegisterMap *map) const {
   assert(zeroframe()->is_interpreter_frame() ||
          zeroframe()->is_fake_stub_frame(), "wrong type of frame");
@@ -82,20 +86,19 @@ BasicObjectLock* frame::interpreter_frame_monitor_begin() const {
   return get_interpreterState()->monitor_base();
 }
 
-// Pointer beyond the "oldest/deepest" BasicObjectLock on stack.
 BasicObjectLock* frame::interpreter_frame_monitor_end() const {
   return (BasicObjectLock*) get_interpreterState()->stack_base();
 }
 
 void frame::patch_pc(Thread* thread, address pc) {
-  if (pc != NULL) {
+  if (pc != nullptr) {
     assert(_cb == CodeCache::find_blob(pc), "unexpected pc");
     _pc = pc;
     _deopt_state = is_deoptimized;
   } else {
     // We borrow this call to set the thread pointer in the interpreter
     // state; the hook to set up deoptimized frames isn't supplied it.
-    assert(pc == NULL, "should be");
+    assert(pc == nullptr, "should be");
     get_interpreterState()->set_thread(JavaThread::cast(thread));
   }
 }
@@ -121,10 +124,10 @@ bool frame::safe_for_sender(JavaThread *thread) {
 bool frame::is_interpreted_frame_valid(JavaThread *thread) const {
   assert(is_interpreted_frame(), "Not an interpreted frame");
   // These are reasonable sanity checks
-  if (fp() == 0 || (intptr_t(fp()) & (wordSize-1)) != 0) {
+  if (fp() == nullptr || (intptr_t(fp()) & (wordSize-1)) != 0) {
     return false;
   }
-  if (sp() == 0 || (intptr_t(sp()) & (wordSize-1)) != 0) {
+  if (sp() == nullptr || (intptr_t(sp()) & (wordSize-1)) != 0) {
     return false;
   }
   // These are hacks to keep us out of trouble.
@@ -156,7 +159,7 @@ bool frame::is_interpreted_frame_valid(JavaThread *thread) const {
   }
 
   // validate locals
-  address locals = (address) *interpreter_frame_locals_addr();
+  address locals = (address)interpreter_frame_locals();
   if (!thread->is_in_stack_range_incl(locals, (address)fp())) {
     return false;
   }
@@ -207,9 +210,9 @@ BasicType frame::interpreter_frame_result(oop* oop_result,
     }
     else {
       oop* obj_p = (oop *) tos_addr;
-      obj = (obj_p == NULL) ? (oop) NULL : *obj_p;
+      obj = (obj_p == nullptr) ? (oop) nullptr : *obj_p;
     }
-    assert(obj == NULL || Universe::heap()->is_in(obj), "sanity check");
+    assert(obj == nullptr || Universe::heap()->is_in(obj), "sanity check");
     *oop_result = obj;
     break;
 
@@ -239,11 +242,9 @@ void frame::zero_print_on_error(int           frame_index,
     int offset = fp() - addr;
 
     // Fill in default values, then try and improve them
-    snprintf(fieldbuf, buflen, "word[%d]", offset);
-    snprintf(valuebuf, buflen, PTR_FORMAT, *addr);
+    os::snprintf_checked(fieldbuf, buflen, "word[%d]", offset);
+    os::snprintf_checked(valuebuf, buflen, PTR_FORMAT, *addr);
     zeroframe()->identify_word(frame_index, offset, fieldbuf, valuebuf, buflen);
-    fieldbuf[buflen - 1] = '\0';
-    valuebuf[buflen - 1] = '\0';
 
     // Print the result
     st->print_cr(" " PTR_FORMAT ": %-21s = %s", p2i(addr), fieldbuf, valuebuf);
@@ -297,7 +298,7 @@ void EntryFrame::identify_word(int   frame_index,
     break;
 
   default:
-    snprintf(fieldbuf, buflen, "local[%d]", offset - 3);
+    os::snprintf_checked(fieldbuf, buflen, "local[%d]", offset - 3);
   }
 }
 
@@ -318,12 +319,12 @@ void InterpreterFrame::identify_word(int   frame_index,
         istate->method()->name_and_sig_as_C_string(valuebuf, buflen);
       }
       else if (is_valid && !strcmp(field, "_bcp") && istate->bcp()) {
-        snprintf(valuebuf, buflen, PTR_FORMAT " (bci %d)",
-                 (intptr_t) istate->bcp(),
-                 istate->method()->bci_from(istate->bcp()));
+        os::snprintf_checked(valuebuf, buflen, PTR_FORMAT " (bci %d)",
+                             (intptr_t) istate->bcp(),
+                             istate->method()->bci_from(istate->bcp()));
       }
-      snprintf(fieldbuf, buflen, "%sistate->%s",
-               field[strlen(field) - 1] == ')' ? "(": "", field);
+      os::snprintf_checked(fieldbuf, buflen, "%sistate->%s",
+                           field[strlen(field) - 1] == ')' ? "(": "", field);
     }
     else if (addr == (intptr_t *) istate) {
       strncpy(fieldbuf, "(vtable for istate)", buflen);
@@ -338,7 +339,7 @@ void InterpreterFrame::identify_word(int   frame_index,
   // JNI stuff
   if (istate->method()->is_native() && addr < istate->stack_base()) {
     address hA = istate->method()->signature_handler();
-    if (hA != NULL) {
+    if (hA != nullptr) {
       if (hA != (address) InterpreterRuntime::slow_signature_handler) {
         InterpreterRuntime::SignatureHandler *handler =
           InterpreterRuntime::SignatureHandler::from_handlerAddr(hA);
@@ -355,13 +356,13 @@ void InterpreterFrame::identify_word(int   frame_index,
             else
               desc = " (this)";
           }
-          snprintf(fieldbuf, buflen, "parameter[%d]%s", param, desc);
+          os::snprintf_checked(fieldbuf, buflen, "parameter[%d]%s", param, desc);
           return;
         }
 
         for (int i = 0; i < handler->argument_count(); i++) {
           if (params[i] == (intptr_t) addr) {
-            snprintf(fieldbuf, buflen, "unboxed parameter[%d]", i);
+            os::snprintf_checked(fieldbuf, buflen, "unboxed parameter[%d]", i);
             return;
           }
         }
@@ -392,19 +393,19 @@ void ZeroFrame::identify_vp_word(int       frame_index,
       (BasicObjectLock *) monitor_base - 1 - index);
     intptr_t offset = (intptr_t) addr - monitor;
 
-    if (offset == BasicObjectLock::obj_offset_in_bytes())
-      snprintf(fieldbuf, buflen, "monitor[%d]->_obj", index);
-    else if (offset ==  BasicObjectLock::lock_offset_in_bytes())
-      snprintf(fieldbuf, buflen, "monitor[%d]->_lock", index);
+    if (offset == in_bytes(BasicObjectLock::obj_offset()))
+      os::snprintf_checked(fieldbuf, buflen, "monitor[%d]->_obj", index);
+    else if (offset == in_bytes(BasicObjectLock::lock_offset()))
+      os::snprintf_checked(fieldbuf, buflen, "monitor[%d]->_lock", index);
 
     return;
   }
 
   // Expression stack
   if (addr < stack_base) {
-    snprintf(fieldbuf, buflen, "%s[%d]",
-             frame_index == 0 ? "stack_word" : "local",
-             (int) (stack_base - addr - 1));
+    os::snprintf_checked(fieldbuf, buflen, "%s[%d]",
+                         frame_index == 0 ? "stack_word" : "local",
+                         (int) (stack_base - addr - 1));
     return;
   }
 }

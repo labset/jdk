@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2014, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2014, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,9 +28,9 @@
  * @summary SharedArchiveConsistency
  * @requires vm.cds
  * @library /test/lib
- * @build sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
  * @compile test-classes/Hello.java
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI SharedArchiveConsistency on
  * @run main/othervm -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI SharedArchiveConsistency auto
  */
@@ -45,22 +45,20 @@ public class SharedArchiveConsistency {
 
     private static int genericHeaderMinVersion;  // minimum supported CDS version
     private static int currentCDSArchiveVersion; // current CDS version in java process
-    // The following should be consistent with the enum in the C++ MetaspaceShared class
+    // The following should be consistent with the enum in the C++ AOTMetaspace class
     public static String[] shared_region_name = {
         "rw",          // ReadWrite
         "ro",          // ReadOnly
         "bm",          // relocation bitmaps
-        "first_closed_archive",
-        "last_closed_archive",
-        "first_open_archive",
-        "last_open_archive"
+        "hp",          // heap
     };
 
     public static final String HELLO_WORLD = "Hello World";
+    public static final String errMsg = "An error has occurred while processing the shared archive file.";
 
     public static int num_regions = shared_region_name.length;
     public static String[] matchMessages = {
-        "UseSharedSpaces: Header checksum verification failed.",
+        "Header checksum verification failed.",
         "The shared archive file has an incorrect header size.",
         "Unable to use shared archive",
         "An error has occurred while processing the shared archive file.",
@@ -173,6 +171,7 @@ public class SharedArchiveConsistency {
         output = shareAuto ? TestCommon.execAuto(execArgs) : TestCommon.execCommon(execArgs);
         output.shouldContain("The shared archive file was created by a different version or build of HotSpot");
         output.shouldNotContain("Checksum verification failed");
+        output.shouldContain(errMsg);
         if (shareAuto) {
             output.shouldContain(HELLO_WORLD);
         }
@@ -197,6 +196,7 @@ public class SharedArchiveConsistency {
         CDSArchiveUtils.modifyHeaderIntField(copiedJsa, CDSArchiveUtils.offsetVersion(), version);
         output = shareAuto ? TestCommon.execAuto(execArgs) : TestCommon.execCommon(execArgs);
         output.shouldContain("The shared archive file version " + hex(version) + " does not match the required version " + hex(currentCDSArchiveVersion));
+        output.shouldContain(errMsg);
         if (shareAuto) {
             output.shouldContain(HELLO_WORLD);
         }
@@ -240,26 +240,26 @@ public class SharedArchiveConsistency {
         System.out.println("\n5. Insert bytes at beginning of data section, should fail\n");
         String insertBytes = startNewArchive("insert-bytes");
         CDSArchiveUtils.insertBytesRandomlyAfterHeader(orgJsaFile, insertBytes);
-        testAndCheck(verifyExecArgs);
+        testAndCheck(verifyExecArgs, errMsg);
 
         // delete bytes in data section forward
         System.out.println("\n6a. Delete bytes at beginning of data section, should fail\n");
         String deleteBytes = startNewArchive("delete-bytes");
         CDSArchiveUtils.deleteBytesAtRandomPositionAfterHeader(orgJsaFile, deleteBytes, 4096 /*bytes*/);
-        testAndCheck(verifyExecArgs);
+        testAndCheck(verifyExecArgs, errMsg);
 
         // delete bytes at the end
         System.out.println("\n6b. Delete bytes at the end, should fail\n");
         deleteBytes = startNewArchive("delete-bytes-end");
         CDSArchiveUtils.deleteBytesAtTheEnd(orgJsaFile, deleteBytes);
-        testAndCheck(verifyExecArgs, "The shared archive file has been truncated.");
+        testAndCheck(verifyExecArgs, "The shared archive file has been truncated.", errMsg);
 
         // modify contents in random area
         System.out.println("\n7. modify Content in random areas, should fail\n");
         String randomAreas = startNewArchive("random-areas");
         copiedJsa = CDSArchiveUtils.copyArchiveFile(orgJsaFile, randomAreas);
         CDSArchiveUtils.modifyRegionContentRandomly(copiedJsa);
-        testAndCheck(verifyExecArgs);
+        testAndCheck(verifyExecArgs, errMsg);
 
         // modify _base_archive_name_offet to non-zero
         System.out.println("\n8. modify _base_archive_name_offset to non-zero\n");

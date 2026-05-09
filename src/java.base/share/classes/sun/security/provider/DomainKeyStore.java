@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2013, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2013, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,6 +30,7 @@ import java.net.*;
 import java.security.*;
 import java.security.cert.Certificate;
 import java.security.cert.CertificateException;
+import java.time.Instant;
 import java.util.*;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -214,16 +215,32 @@ abstract class DomainKeyStore extends KeyStoreSpi {
      * not exist
      */
     public Date engineGetCreationDate(String alias) {
+        final Instant instant = this.engineGetCreationInstant(alias);
+        return (instant == null) ? null : Date.from(instant);
+    }
+
+    /**
+     * Returns the instant that the entry identified by the given alias was
+     * created.
+     *
+     * @param alias the alias name
+     *
+     * @return the instant that the entry identified by the given alias
+     * was created, or {@code null} if the given alias does not exist
+     *
+     * @since 27
+     */
+    public Instant engineGetCreationInstant(String alias) {
 
         AbstractMap.SimpleEntry<String, Collection<KeyStore>> pair =
             getKeystoresForReading(alias);
-        Date date = null;
+        Instant instant = null;
 
         try {
             String entryAlias = pair.getKey();
             for (KeyStore keystore : pair.getValue()) {
-                date = keystore.getCreationDate(entryAlias);
-                if (date != null) {
+                instant = keystore.getCreationInstant(entryAlias);
+                if (instant != null) {
                     break;
                 }
             }
@@ -231,7 +248,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
             throw new IllegalStateException(e);
         }
 
-        return date;
+        return instant;
     }
 
     @Override
@@ -396,8 +413,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
         final Iterator<Map.Entry<String, KeyStore>> iterator =
             keystores.entrySet().iterator();
 
-        return new Enumeration<String>() {
-            private int index = 0;
+        return new Enumeration<>() {
             private Map.Entry<String, KeyStore> keystoresEntry = null;
             private String prefix = null;
             private Enumeration<String> aliases = null;
@@ -555,14 +571,13 @@ abstract class DomainKeyStore extends KeyStoreSpi {
             KeyStore keystore = keystores.get(splits[0]);
             if (keystore != null) {
                 return new AbstractMap.SimpleEntry<>(splits[1],
-                    (Collection<KeyStore>) Collections.singleton(keystore));
+                        Collections.singleton(keystore));
             }
         } else if (splits.length == 1) { // unprefixed alias
             // Check all keystores for the first occurrence of the alias
             return new AbstractMap.SimpleEntry<>(alias, keystores.values());
         }
-        return new AbstractMap.SimpleEntry<>("",
-            (Collection<KeyStore>) Collections.<KeyStore>emptyList());
+        return new AbstractMap.SimpleEntry<>("", Collections.emptyList());
     }
 
     /*
@@ -652,9 +667,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
     public void engineStore(KeyStore.LoadStoreParameter param)
         throws IOException, NoSuchAlgorithmException, CertificateException
     {
-        if (param instanceof DomainLoadStoreParameter) {
-            DomainLoadStoreParameter domainParameter =
-                (DomainLoadStoreParameter) param;
+        if (param instanceof DomainLoadStoreParameter domainParameter) {
             List<KeyStoreBuilderComponents> builders = getBuilders(
                 domainParameter.getConfiguration(),
                     domainParameter.getProtectionParams());
@@ -714,7 +727,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
     {
         // Support loading from a stream only for a JKS or default type keystore
         try {
-            KeyStore keystore = null;
+            KeyStore keystore;
 
             try {
                 keystore = KeyStore.getInstance("JKS");
@@ -743,9 +756,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
     public void engineLoad(KeyStore.LoadStoreParameter param)
         throws IOException, NoSuchAlgorithmException, CertificateException
     {
-        if (param instanceof DomainLoadStoreParameter) {
-            DomainLoadStoreParameter domainParameter =
-                (DomainLoadStoreParameter) param;
+        if (param instanceof DomainLoadStoreParameter domainParameter) {
             List<KeyStoreBuilderComponents> builders = getBuilders(
                 domainParameter.getConfiguration(),
                     domainParameter.getProtectionParams());
@@ -786,7 +797,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
             throws IOException {
 
         PolicyParser parser = new PolicyParser(true); // expand properties
-        Collection<PolicyParser.DomainEntry> domains = null;
+        Collection<PolicyParser.DomainEntry> domains;
         List<KeyStoreBuilderComponents> builders = new ArrayList<>();
         String uriDomain = configuration.getFragment();
 
@@ -812,7 +823,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
                 this.entryNameSeparator =
                     domainProperties.get(ENTRY_NAME_SEPARATOR);
                 // escape any regex meta characters
-                char ch = 0;
+                char ch;
                 StringBuilder s = new StringBuilder();
                 for (int i = 0; i < this.entryNameSeparator.length(); i++) {
                     ch = this.entryNameSeparator.charAt(i);
@@ -867,7 +878,7 @@ abstract class DomainKeyStore extends KeyStoreSpi {
                     }
                 }
 
-                KeyStore.ProtectionParameter keystoreProtection = null;
+                KeyStore.ProtectionParameter keystoreProtection;
                 if (passwords.containsKey(keystoreName)) {
                     keystoreProtection = passwords.get(keystoreName);
 

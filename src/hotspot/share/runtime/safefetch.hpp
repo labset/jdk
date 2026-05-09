@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2022 SAP SE. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -31,14 +31,13 @@
 // Safefetch allows to load a value from a location that's not known
 // to be valid. If the load causes a fault, the error value is returned.
 
-#ifdef _WIN32
-  // Windows uses Structured Exception Handling
+#if defined(_WIN32) && !defined(_M_ARM64)
+  // Windows x86_64 uses Structured Exception Handling
   #include "safefetch_windows.hpp"
-#elif defined(ZERO) || defined (_AIX) || defined (ARM32)
+#elif defined(ZERO) || defined (_AIX)
   // These platforms implement safefetch via Posix sigsetjmp/longjmp.
   // This is slower than the other methods and uses more thread stack,
   // but its safe and portable.
-  // (arm32 uses sigsetjmp/longjmp as long as JDK-8284997 is not solved)
   #include "safefetch_sigjmp.hpp"
   #define SAFEFETCH_METHOD_SIGSETJMP
 #else

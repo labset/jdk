@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -397,7 +397,7 @@ eventFilterRestricted_passesFilter(JNIEnv *env,
      * Suppress most events if they happen in debug threads
      */
     if ((evinfo->ei != EI_CLASS_PREPARE) &&
-        (evinfo->ei != EI_GC_FINISH) &&
+        (evinfo->ei != EI_CLASS_UNLOAD) &&
         (evinfo->ei != EI_CLASS_LOAD) &&
         threadControl_isDebugThread(thread)) {
         return JNI_FALSE;
@@ -749,7 +749,7 @@ eventFilter_setThreadOnlyFilter(HandlerNode *node, jint index,
     if (index >= FILTER_COUNT(node)) {
         return AGENT_ERROR_ILLEGAL_ARGUMENT;
     }
-    if (NODE_EI(node) == EI_GC_FINISH) {
+    if (NODE_EI(node) == EI_CLASS_UNLOAD) {
         return AGENT_ERROR_ILLEGAL_ARGUMENT;
     }
 
@@ -821,7 +821,7 @@ eventFilter_setClassOnlyFilter(HandlerNode *node, jint index,
         return AGENT_ERROR_ILLEGAL_ARGUMENT;
     }
     if (
-        (NODE_EI(node) == EI_GC_FINISH) ||
+        (NODE_EI(node) == EI_CLASS_UNLOAD) ||
         (NODE_EI(node) == EI_THREAD_START) ||
         (NODE_EI(node) == EI_THREAD_END)) {
 
@@ -976,7 +976,6 @@ eventFilter_setSourceNameMatchFilter(HandlerNode *node,
 
 jvmtiError eventFilter_setPlatformThreadsOnlyFilter(HandlerNode *node, jint index)
 {
-    PlatformThreadsFilter *filter = &FILTER(node, index).u.PlatformThreadsOnly;
     if (index >= FILTER_COUNT(node)) {
         return AGENT_ERROR_ILLEGAL_ARGUMENT;
     }
@@ -1265,8 +1264,7 @@ enableEvents(HandlerNode *node)
         case EI_THREAD_END:
         case EI_VM_INIT:
         case EI_VM_DEATH:
-        case EI_CLASS_PREPARE:
-        case EI_GC_FINISH:
+        case EI_CLASS_UNLOAD:
         case EI_VIRTUAL_THREAD_START:
         case EI_VIRTUAL_THREAD_END:
             return error;
@@ -1326,8 +1324,7 @@ disableEvents(HandlerNode *node)
         case EI_THREAD_END:
         case EI_VM_INIT:
         case EI_VM_DEATH:
-        case EI_CLASS_PREPARE:
-        case EI_GC_FINISH:
+        case EI_CLASS_UNLOAD:
         case EI_VIRTUAL_THREAD_START:
         case EI_VIRTUAL_THREAD_END:
             return error;
@@ -1389,9 +1386,7 @@ eventFilterRestricted_deinstall(HandlerNode *node)
     return error1 != JVMTI_ERROR_NONE? error1 : error2;
 }
 
-/***** debugging *****/
-
-#ifdef DEBUG
+/***** APIs for debugging the debug agent *****/
 
 void
 eventFilter_dumpHandlerFilters(HandlerNode *node)
@@ -1478,5 +1473,3 @@ eventFilter_dumpHandlerFilters(HandlerNode *node)
         }
     }
 }
-
-#endif /* DEBUG */

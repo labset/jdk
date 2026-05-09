@@ -4,7 +4,7 @@
  *
  *   Embedded resource forks accessor (body).
  *
- * Copyright (C) 2004-2022 by
+ * Copyright (C) 2004-2025 by
  * Masatake YAMATO and Redhat K.K.
  *
  * FT_Raccess_Get_HeaderInfo() and raccess_guess_darwin_hfsplus() are
@@ -269,14 +269,8 @@
            * According to Inside Macintosh: More Macintosh Toolbox,
            * "Resource IDs" (1-46), there are some reserved IDs.
            * However, FreeType2 is not a font synthesizer, no need
-           * to check the acceptable resource ID.
+           * to check the acceptable resource ID or its attributes.
            */
-          if ( temp < 0 )
-          {
-            error = FT_THROW( Invalid_Table );
-            goto Exit;
-          }
-
           ref[j].offset = temp & 0xFFFFFFL;
 
           FT_TRACE3(( "             [%d]:"
@@ -402,17 +396,17 @@
                                 FT_Long    *result_offset );
 
 
-  CONST_FT_RFORK_RULE_ARRAY_BEGIN(ft_raccess_guess_table,
-                                  ft_raccess_guess_rec)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(apple_double,      apple_double)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(apple_single,      apple_single)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(darwin_ufs_export, darwin_ufs_export)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(darwin_newvfs,     darwin_newvfs)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(darwin_hfsplus,    darwin_hfsplus)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(vfat,              vfat)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(linux_cap,         linux_cap)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(linux_double,      linux_double)
-  CONST_FT_RFORK_RULE_ARRAY_ENTRY(linux_netatalk,    linux_netatalk)
+  CONST_FT_RFORK_RULE_ARRAY_BEGIN( ft_raccess_guess_table,
+                                                      ft_raccess_guess_rec )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( apple_double,      apple_double )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( apple_single,      apple_single )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( darwin_ufs_export, darwin_ufs_export )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( darwin_newvfs,     darwin_newvfs )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( darwin_hfsplus,    darwin_hfsplus )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( vfat,              vfat )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( linux_cap,         linux_cap )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( linux_double,      linux_double )
+  CONST_FT_RFORK_RULE_ARRAY_ENTRY( linux_netatalk,    linux_netatalk )
   CONST_FT_RFORK_RULE_ARRAY_END
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -48,8 +48,6 @@ import org.openide.NotifyDescriptor.Message;
  */
 public class NodeQuickSearch implements SearchProvider {
 
-    private static final String DEFAULT_PROPERTY = "label";
-
     /**
      * Method is called by infrastructure when search operation was requested.
      * Implementors should evaluate given request and fill response object with
@@ -72,7 +70,7 @@ public class NodeQuickSearch implements SearchProvider {
         String value;
 
         if (parts.length == 1) {
-            name = DEFAULT_PROPERTY;
+            name = InputNode.LABEL_PROPERTY;
             rawValue = parts[0];
             value = ".*" + Pattern.quote(rawValue) + ".*";
         } else {
@@ -108,24 +106,23 @@ public class NodeQuickSearch implements SearchProvider {
             }
 
             if (matches != null) {
-                final Set<InputNode> set = new HashSet<>(matches);
+                final Set<InputNode> nodeSet = new HashSet<>(matches);
                 final InputGraph theGraph = p.getGraph() != matchGraph ? matchGraph : null;
                 // Show "All N matching nodes" entry only if 1) there are
                 // multiple matches and 2) the query does not only contain
                 // digits (it is rare to select all nodes whose id contains a
                 // certain subsequence of digits).
                 if (matches.size() > 1 && !rawValue.matches("\\d+")) {
-                    if (!response.addResult(new Runnable() {
-                        @Override
-                        public void run() {
-                            final EditorTopComponent comp = EditorTopComponent.getActive();
-                            if (comp != null) {
-                                if (theGraph != null) {
-                                    comp.getDiagramModel().selectGraph(theGraph);
-                                }
-                                comp.setSelectedNodes(set);
-                                comp.requestActive();
+                    if (!response.addResult(() -> {
+                        final EditorTopComponent editor = EditorTopComponent.getActive();
+                        if (editor != null) {
+                            if (theGraph != null) {
+                                editor.getModel().selectGraph(theGraph);
                             }
+                            editor.clearSelectedElements();
+                            editor.addSelectedNodes(nodeSet, true);
+                            editor.centerSelectedNodes();
+                            editor.requestActive();
                         }
                     },
                             "All " + matches.size() + " matching nodes (" + name + "=" + value + ")" + (theGraph != null ? " in " + theGraph.getName() : "")
@@ -145,15 +142,17 @@ public class NodeQuickSearch implements SearchProvider {
                     if (!response.addResult(new Runnable() {
                         @Override
                         public void run() {
-                            final EditorTopComponent comp = EditorTopComponent.getActive();
-                            if (comp != null) {
+                            final EditorTopComponent editor = EditorTopComponent.getActive();
+                            if (editor != null) {
                                 final Set<InputNode> tmpSet = new HashSet<>();
                                 tmpSet.add(n);
                                 if (theGraph != null) {
-                                    comp.getDiagramModel().selectGraph(theGraph);
+                                    editor.getModel().selectGraph(theGraph);
                                 }
-                                comp.setSelectedNodes(tmpSet);
-                                comp.requestActive();
+                                editor.clearSelectedElements();
+                                editor.addSelectedNodes(tmpSet, true);
+                                editor.centerSelectedNodes();
+                                editor.requestActive();
                             }
                         }
                     },
@@ -176,14 +175,11 @@ public class NodeQuickSearch implements SearchProvider {
             return matches.size() == 0 ? null : matches;
         } catch (Exception e) {
             final String msg = e.getMessage();
-            response.addResult(new Runnable() {
-                @Override
-                public void run() {
-                    Message desc = new NotifyDescriptor.Message("An exception occurred during the search, "
-                            + "perhaps due to a malformed query string:\n" + msg,
-                            NotifyDescriptor.WARNING_MESSAGE);
-                    DialogDisplayer.getDefault().notify(desc);
-                }
+            response.addResult(() -> {
+                Message desc = new Message("An exception occurred during the search, "
+                        + "perhaps due to a malformed query string:\n" + msg,
+                        NotifyDescriptor.WARNING_MESSAGE);
+                DialogDisplayer.getDefault().notify(desc);
             },
                     "(Error during search)"
             );

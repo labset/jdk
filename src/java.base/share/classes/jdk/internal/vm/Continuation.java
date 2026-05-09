@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,46 +25,41 @@
 
 package jdk.internal.vm;
 
-import jdk.internal.misc.PreviewFeatures;
 import jdk.internal.misc.Unsafe;
 import jdk.internal.vm.annotation.DontInline;
 import jdk.internal.vm.annotation.IntrinsicCandidate;
-import sun.security.action.GetPropertyAction;
 
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.VarHandle;
 import java.util.EnumSet;
-import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Supplier;
 import jdk.internal.access.JavaLangAccess;
 import jdk.internal.access.SharedSecrets;
+import jdk.internal.vm.annotation.Hidden;
+import jdk.internal.vm.annotation.JvmtiHideEvents;
 
 /**
  * A one-shot delimited continuation.
  */
 public class Continuation {
     private static final Unsafe U = Unsafe.getUnsafe();
-    private static final boolean PRESERVE_EXTENT_LOCAL_CACHE;
+    private static final long MOUNTED_OFFSET = U.objectFieldOffset(Continuation.class, "mounted");
+    private static final boolean PRESERVE_SCOPED_VALUE_CACHE;
     private static final JavaLangAccess JLA = SharedSecrets.getJavaLangAccess();
     static {
         ContinuationSupport.ensureSupported();
-        PreviewFeatures.ensureEnabled();
 
         StackChunk.init(); // ensure StackChunk class is initialized
 
-        String value = GetPropertyAction.privilegedGetProperty("jdk.preserveExtentLocalCache");
-        PRESERVE_EXTENT_LOCAL_CACHE = (value == null) || Boolean.parseBoolean(value);
+        String value = System.getProperty("jdk.preserveScopedValueCache");
+        PRESERVE_SCOPED_VALUE_CACHE = (value == null) || Boolean.parseBoolean(value);
     }
-
-    private static final VarHandle MOUNTED;
 
     /** Reason for pinning */
     public enum Pinned {
         /** Native frame on stack */ NATIVE,
-        /** Monitor held */          MONITOR,
-        /** In critical section */   CRITICAL_SECTION }
+        /** In critical section */   CRITICAL_SECTION,
+        /** Exception (OOME/SOE) */  EXCEPTION
+    }
 
     /** Preemption attempt result */
     public enum PreemptStatus {
@@ -73,8 +68,7 @@ public class Continuation {
         /** Permanent failure: continuation already yielding */             PERM_FAIL_YIELDING(null),
         /** Permanent failure: continuation not mounted on the thread */    PERM_FAIL_NOT_MOUNTED(null),
         /** Transient failure: continuation pinned due to a held CS */      TRANSIENT_FAIL_PINNED_CRITICAL_SECTION(Pinned.CRITICAL_SECTION),
-        /** Transient failure: continuation pinned due to native frame */   TRANSIENT_FAIL_PINNED_NATIVE(Pinned.NATIVE),
-        /** Transient failure: continuation pinned due to a held monitor */ TRANSIENT_FAIL_PINNED_MONITOR(Pinned.MONITOR);
+        /** Transient failure: continuation pinned due to native frame */   TRANSIENT_FAIL_PINNED_NATIVE(Pinned.NATIVE);
 
         final Pinned pinned;
         private PreemptStatus(Pinned reason) { this.pinned = reason; }
@@ -89,7 +83,7 @@ public class Continuation {
         return switch (reason) {
             case 2 -> Pinned.CRITICAL_SECTION;
             case 3 -> Pinned.NATIVE;
-            case 4 -> Pinned.MONITOR;
+            case 4 -> Pinned.EXCEPTION;
             default -> throw new AssertionError("Unknown pinned reason: " + reason);
         };
     }
@@ -104,9 +98,6 @@ public class Continuation {
 
             // init Pinned to avoid classloading during mounting
             pinnedReason(2);
-
-            MethodHandles.Lookup l = MethodHandles.lookup();
-            MOUNTED = l.findVarHandle(Continuation.class, "mounted", boolean.class);
         } catch (Exception e) {
             throw new InternalError(e);
         }
@@ -125,11 +116,11 @@ public class Continuation {
     private StackChunk tail;
 
     private boolean done;
-    private volatile boolean mounted = false;
+    private volatile boolean mounted;
     private Object yieldInfo;
     private boolean preempted;
 
-    private Object[] extentLocalCache;
+    private Object[] scopedValueCache;
 
     /**
      * Constructs a continuation
@@ -238,7 +229,7 @@ public class Continuation {
     public final void run() {
         while (true) {
             mount();
-            JLA.setExtentLocalCache(extentLocalCache);
+            JLA.setScopedValueCache(scopedValueCache);
 
             if (done)
                 throw new IllegalStateException("Continuation terminated");
@@ -270,12 +261,12 @@ public class Continuation {
                     postYieldCleanup();
 
                     unmount();
-                    if (PRESERVE_EXTENT_LOCAL_CACHE) {
-                        extentLocalCache = JLA.extentLocalCache();
+                    if (PRESERVE_SCOPED_VALUE_CACHE) {
+                        scopedValueCache = JLA.scopedValueCache();
                     } else {
-                        extentLocalCache = null;
+                        scopedValueCache = null;
                     }
-                    JLA.setExtentLocalCache(null);
+                    JLA.setScopedValueCache(null);
                 } catch (Throwable e) { e.printStackTrace(); System.exit(1); }
             }
             // we're now in the parent continuation
@@ -305,14 +296,16 @@ public class Continuation {
     }
 
     @IntrinsicCandidate
-    private static int doYield() { throw new Error("Intrinsic not installed"); }
+    private static native int doYield();
 
     @IntrinsicCandidate
-    private native static void enterSpecial(Continuation c, boolean isContinue, boolean isVirtualThread);
+    private static native void enterSpecial(Continuation c, boolean isContinue, boolean isVirtualThread);
 
 
+    @Hidden
     @DontInline
     @IntrinsicCandidate
+    @JvmtiHideEvents
     private static void enter(Continuation c, boolean isContinue) {
         // This method runs in the "entry frame".
         // A yield jumps to this method's caller as if returning from this method.
@@ -323,8 +316,10 @@ public class Continuation {
         }
     }
 
+    @Hidden
+    @JvmtiHideEvents
     private void enter0() {
-      target.run();
+        target.run();
     }
 
     private boolean isStarted() {
@@ -346,6 +341,8 @@ public class Continuation {
      * @return {@code true} for success; {@code false} for failure
      * @throws IllegalStateException if not currently in the given {@code scope},
      */
+    @Hidden
+    @JvmtiHideEvents
     public static boolean yield(ContinuationScope scope) {
         Continuation cont = JLA.getContinuation(currentCarrierThread());
         Continuation c;
@@ -357,9 +354,9 @@ public class Continuation {
         return cont.yield0(scope, null);
     }
 
+    @Hidden
+    @JvmtiHideEvents
     private boolean yield0(ContinuationScope scope, Continuation child) {
-        preempted = false;
-
         if (scope != this.scope)
             this.yieldInfo = scope;
         int res = doYield();
@@ -432,6 +429,7 @@ public class Continuation {
      * Pins the current continuation (enters a critical section).
      * This increments an internal semaphore that, when greater than 0, pins the continuation.
      */
+    @IntrinsicCandidate
     public static native void pin();
 
     /**
@@ -439,6 +437,7 @@ public class Continuation {
      * This decrements an internal semaphore that, when equal 0, unpins the current continuation
      * if pinned with {@link #pin()}.
      */
+    @IntrinsicCandidate
     public static native void unpin();
 
     /**
@@ -453,7 +452,7 @@ public class Continuation {
         return res != 0;
     }
 
-    static private native int isPinned0(ContinuationScope scope);
+    private static native int isPinned0(ContinuationScope scope);
 
     private boolean fence() {
         U.storeFence(); // needed to prevent certain transformations by the compiler
@@ -461,9 +460,8 @@ public class Continuation {
     }
 
     private boolean compareAndSetMounted(boolean expectedValue, boolean newValue) {
-       boolean res = MOUNTED.compareAndSet(this, expectedValue, newValue);
-       return res;
-     }
+        return U.compareAndSetBoolean(this, MOUNTED_OFFSET, expectedValue, newValue);
+    }
 
     private void setMounted(boolean newValue) {
         mounted = newValue; // MOUNTED.setVolatile(this, newValue);
@@ -501,7 +499,7 @@ public class Continuation {
     }
 
     private static boolean isEmptyOrTrue(String property) {
-        String value = GetPropertyAction.privilegedGetProperty(property);
+        String value = System.getProperty(property);
         if (value == null)
             return false;
         return value.isEmpty() || Boolean.parseBoolean(value);

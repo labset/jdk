@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2016, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -45,10 +45,12 @@ import jdk.jfr.Period;
 import jdk.jfr.Relational;
 import jdk.jfr.StackTrace;
 import jdk.jfr.Threshold;
+import jdk.jfr.Throttle;
 import jdk.jfr.TransitionFrom;
 import jdk.jfr.TransitionTo;
 import jdk.jfr.Unsigned;
-
+import jdk.jfr.internal.util.Utils;
+import jdk.jfr.internal.settings.ThrottleSetting;
 public final class MetadataLoader {
 
     // Caching to reduce allocation pressure and heap usage
@@ -80,6 +82,7 @@ public final class MetadataLoader {
         private final boolean stackTrace;
         private final boolean cutoff;
         private final boolean throttle;
+        private final String level;
         private final boolean isEvent;
         private final boolean isRelation;
         private final boolean experimental;
@@ -102,6 +105,7 @@ public final class MetadataLoader {
             period = dis.readUTF();
             cutoff = dis.readBoolean();
             throttle = dis.readBoolean();
+            level = dis.readUTF();
             experimental = dis.readBoolean();
             internal = dis.readBoolean();
             id = dis.readLong();
@@ -140,7 +144,7 @@ public final class MetadataLoader {
     }
 
     private final List<TypeElement> types;
-    private final Map<String, List<AnnotationElement>> anotationElements = new HashMap<>(20);
+    private final Map<String, List<AnnotationElement>> anotationElements = HashMap.newHashMap(16);
     private final Map<String, AnnotationElement> categories = new HashMap<>();
 
     MetadataLoader(DataInputStream dis) throws IOException {
@@ -188,7 +192,7 @@ public final class MetadataLoader {
 
     public static List<Type> createTypes() throws IOException {
         try (DataInputStream dis = new DataInputStream(
-                SecuritySupport.getResourceAsStream("/jdk/jfr/internal/types/metadata.bin"))) {
+                MetadataLoader.class.getResourceAsStream("/jdk/jfr/internal/types/metadata.bin"))) {
             MetadataLoader ml = new MetadataLoader(dis);
             return ml.buildTypes();
         } catch (Exception e) {
@@ -204,7 +208,7 @@ public final class MetadataLoader {
     }
 
     private Map<String, AnnotationElement> buildRelationMap(Map<String, Type> typeMap) {
-        Map<String, AnnotationElement> relationMap = new HashMap<>(20);
+        Map<String, AnnotationElement> relationMap = HashMap.newHashMap(10);
         for (TypeElement t : types) {
             if (t.isRelation) {
                 Type relationType = typeMap.get(t.name);
@@ -272,8 +276,8 @@ public final class MetadataLoader {
     }
 
     private Map<String, Type> buildTypeMap() {
-        Map<String, Type> typeMap = new HashMap<>(2 * types.size());
-        Map<String, Type> knownTypeMap = new HashMap<>(20);
+        Map<String, Type> typeMap = HashMap.newHashMap(types.size());
+        Map<String, Type> knownTypeMap = HashMap.newHashMap(16);
         for (Type kt : Type.getKnownTypes()) {
             typeMap.put(kt.getName(), kt);
             knownTypeMap.put(kt.getName(), kt);
@@ -306,11 +310,18 @@ public final class MetadataLoader {
                         aes.add(STACK_TRACE);
                     }
                 }
+                if (!t.level.isEmpty()) {
+                    String[] levels = t.level.split(",");
+                    for (int i = 0; i < levels.length; i++) {
+                        levels[i] = levels[i].strip();
+                    }
+                    aes.add(new AnnotationElement(Level.class, levels));
+                }
                 if (t.cutoff) {
                     aes.add(new AnnotationElement(Cutoff.class, Cutoff.INFINITY));
                 }
                 if (t.throttle) {
-                    aes.add(new AnnotationElement(Throttle.class, Throttle.DEFAULT));
+                    aes.add(new AnnotationElement(Throttle.class, ThrottleSetting.DEFAULT_VALUE));
                 }
             }
             if (t.experimental) {

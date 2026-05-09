@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,7 +27,10 @@ package jdk.internal.net.http;
 
 import java.io.EOFException;
 import java.lang.System.Logger.Level;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.net.http.HttpResponse.BodySubscriber;
+import java.net.ProtocolException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -44,6 +47,7 @@ import jdk.internal.net.http.common.MinimalFuture;
 import jdk.internal.net.http.common.Utils;
 import static java.net.http.HttpClient.Version.HTTP_1_1;
 import static java.net.http.HttpResponse.BodySubscribers.discarding;
+import static jdk.internal.net.http.common.Utils.readContentLength;
 import static jdk.internal.net.http.common.Utils.wrapWithExtraDetail;
 import static jdk.internal.net.http.RedirectFilter.HTTP_NOT_MODIFIED;
 
@@ -66,6 +70,7 @@ class Http1Response<T> {
     private final Http1AsyncReceiver asyncReceiver;
     private volatile EOFException eof;
     private volatile BodyParser bodyParser;
+    private volatile boolean closeWhenFinished;
     // max number of bytes of (fixed length) body to ignore on redirect
     private static final int MAX_IGNORE = 1024;
 
@@ -113,21 +118,26 @@ class Http1Response<T> {
     // of a pending operation. Although there usually is a single
     // point where the operation starts, it may terminate at
     // different places.
-    private final class ClientRefCountTracker {
-        final HttpClientImpl client = connection.client();
+    private static final class ClientRefCountTracker {
+        final HttpClientImpl client;
+        final Logger debug;
         // state & 0x01 != 0 => acquire called
         // state & 0x02 != 0 => tryRelease called
-        byte state;
+        volatile byte state;
 
-        public synchronized boolean acquire() {
-            if (state == 0) {
+        ClientRefCountTracker(HttpClientImpl client, Logger logger) {
+            this.client = client;
+            this.debug = logger;
+        }
+
+        public boolean acquire() {
+            if (STATE.compareAndSet(this, (byte) 0, (byte) 0x01)) {
                 // increment the reference count on the HttpClientImpl
                 // to prevent the SelectorManager thread from exiting
                 // until our operation is complete.
                 if (debug.on())
                     debug.log("Operation started: incrementing ref count for %s", client);
                 client.reference();
-                state = 0x01;
                 return true;
             } else {
                 if (debug.on())
@@ -138,8 +148,8 @@ class Http1Response<T> {
             }
         }
 
-        public synchronized void tryRelease() {
-            if (state == 0x01) {
+        public void tryRelease() {
+            if (STATE.compareAndSet(this, (byte) 0x01, (byte) 0x03)) {
                 // decrement the reference count on the HttpClientImpl
                 // to allow the SelectorManager thread to exit if no
                 // other operation is pending and the facade is no
@@ -149,12 +159,21 @@ class Http1Response<T> {
                 client.unreference();
             } else if (state == 0) {
                 if (debug.on())
-                    debug.log("Operation finished: releasing ref count for %s", client);
+                    debug.log("Operation not started: releasing ref count for %s", client);
             } else if ((state & 0x02) == 0x02) {
                 if (debug.on())
                     debug.log("ref count for %s already released", client);
             }
-            state |= 0x02;
+        }
+
+        private static final VarHandle STATE;
+        static {
+            try {
+                STATE = MethodHandles.lookup().findVarHandle(
+                        ClientRefCountTracker.class, "state", byte.class);
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new ExceptionInInitializerError(e);
+            }
         }
     }
 
@@ -207,6 +226,7 @@ class Http1Response<T> {
 
                 if (Log.headers()) {
                     StringBuilder sb = new StringBuilder("RESPONSE HEADERS:\n");
+                    sb.append("  %s %s %s\n".formatted(request.method(), request.uri(), responseCode));
                     Log.dumpHeaders(sb, "    ", headers);
                     Log.logHeaders(sb.toString());
                 }
@@ -254,21 +274,36 @@ class Http1Response<T> {
     }
 
     /**
-     * Read up to MAX_IGNORE bytes discarding
+     * Reads the body, if it is present and less than {@value MAX_IGNORE} bytes.
+     * Otherwise, just the connection is closed.
      */
     public CompletableFuture<Void> ignoreBody(Executor executor) {
-        int clen = (int)headers.firstValueAsLong("Content-Length").orElse(-1);
-        if (clen == -1 || clen > MAX_IGNORE) {
+
+        // Read the `Content-Length` header
+        long clen;
+        try {
+            clen = readContentLength(headers, "", -1);
+        } catch (ProtocolException pe) {
+            return MinimalFuture.failedFuture(pe);
+        }
+
+        // Read the body, if it is present and less than `MAX_IGNORE` bytes.
+        //
+        // We proceed with reading the body even when `Content-Length: 0` to
+        // ensure that the happy path is taken, and upon success, the connection
+        // is returned back to the pool.
+        if (clen != -1 && clen <= MAX_IGNORE) {
+            return readBody(discarding(), !request.isWebSocket(), executor);
+        } else {
             connection.close();
             return MinimalFuture.completedFuture(null); // not treating as error
-        } else {
-            return readBody(discarding(), !request.isWebSocket(), executor);
         }
+
     }
 
     // Used for those response codes that have no body associated
     public void nullBody(HttpResponse<T> resp, Throwable t) {
-        if (t != null) connection.close();
+        if (t != null) connection.close(t);
         else {
             return2Cache = !request.isWebSocket();
             onFinished();
@@ -290,17 +325,34 @@ class Http1Response<T> {
         this.return2Cache = return2Cache;
         final BodySubscriber<U> subscriber = p;
 
-
         final CompletableFuture<U> cf = new MinimalFuture<>();
 
-        long clen0 = headers.firstValueAsLong("Content-Length").orElse(-1L);
-        final long clen = fixupContentLen(clen0);
+        Consumer<Throwable> errorNotifier = error -> {
+            try {
+                subscriber.onError(error);
+                cf.completeExceptionally(error);
+            } finally {
+                asyncReceiver.setRetryOnError(false);
+                asyncReceiver.onReadError(error);
+            }
+        };
+
+        // Read the content length
+        long clen;
+        try {
+            long clen0 = readContentLength(headers, "", -1);
+            clen = fixupContentLen(clen0);
+        } catch (ProtocolException pe) {
+            errorNotifier.accept(pe);
+            connection.close(pe);
+            return cf;
+        }
 
         // expect-continue reads headers and body twice.
         // if we reach here, we must reset the headersReader state.
         asyncReceiver.unsubscribe(headersReader);
         headersReader.reset();
-        ClientRefCountTracker refCountTracker = new ClientRefCountTracker();
+        ClientRefCountTracker refCountTracker = new ClientRefCountTracker(connection.client(), debug);
 
         // We need to keep hold on the client facade until the
         // tracker has been incremented.
@@ -314,7 +366,7 @@ class Http1Response<T> {
                 );
                 if (cf.isCompletedExceptionally()) {
                     // if an error occurs during subscription
-                    connection.close();
+                    connection.close(Utils.exceptionNow(cf));
                     return;
                 }
                 // increment the reference count on the HttpClientImpl
@@ -335,7 +387,7 @@ class Http1Response<T> {
                         } finally {
                             bodyReader.onComplete(t);
                             if (t != null) {
-                                connection.close();
+                                connection.close(t);
                             }
                         }
                     });
@@ -380,12 +432,7 @@ class Http1Response<T> {
             }
         });
 
-        ResponseSubscribers.getBodyAsync(executor, p, cf, (t) -> {
-            subscriber.onError(t);
-            cf.completeExceptionally(t);
-            asyncReceiver.setRetryOnError(false);
-            asyncReceiver.onReadError(t);
-        });
+        ResponseSubscribers.getBodyAsync(executor, p, cf, errorNotifier);
 
         return cf.whenComplete((s,t) -> {
             if (t != null) {
@@ -404,7 +451,11 @@ class Http1Response<T> {
 
     private void onFinished() {
         asyncReceiver.clear();
-        if (return2Cache) {
+        if (closeWhenFinished) {
+            if (debug.on())
+                debug.log("Closing Connection when finished");
+            connection.close();
+        } else if (return2Cache) {
             Log.logTrace("Attempting to return connection to the pool: {0}", connection);
             // TODO: need to do something here?
             // connection.setAsyncCallbacks(null, null, null);
@@ -414,6 +465,10 @@ class Http1Response<T> {
                 debug.log(connection.getConnectionFlow() + ": return to HTTP/1.1 pool");
             connection.closeOrReturnToCache(eof == null ? headers : null);
         }
+    }
+
+    void closeWhenFinished() {
+        closeWhenFinished = true;
     }
 
     HttpHeaders responseHeaders() {
@@ -446,7 +501,7 @@ class Http1Response<T> {
             debug.log(Level.DEBUG, "onReadError", t);
         }
         debug.log(Level.DEBUG, () -> "closing connection: cause is " + t);
-        connection.close();
+        connection.close(t);
     }
 
     // ========================================================================

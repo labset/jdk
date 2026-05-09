@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,17 +33,17 @@ import jdk.test.lib.jfr.EventNames;
 import jdk.test.lib.jfr.Events;
 import jdk.test.lib.Asserts;
 import jdk.test.lib.Platform;
-import sun.hotspot.WhiteBox;
+import jdk.test.whitebox.WhiteBox;
 
 /**
  * @test
  * @summary Test that when an object is allocated outside a TLAB an event will be triggered.
- * @key jfr
+ * @requires vm.flagless
  * @requires vm.hasJFR
  * @library /test/lib
- * @build sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
  *
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:.
  *                   -XX:+UseTLAB -XX:TLABSize=2k -XX:-ResizeTLAB
  *                   jdk.jfr.event.allocation.TestObjectAllocationSampleEventThrottling
@@ -52,9 +52,10 @@ import sun.hotspot.WhiteBox;
 public class TestObjectAllocationSampleEventThrottling {
     private static final String EVENT_NAME = EventNames.ObjectAllocationSample;
 
-    private static final Boolean COMPRESSED_CLASS_PTRS = WhiteBox.getWhiteBox().getBooleanVMFlag("UseCompressedClassPointers");
-
-    private static final int BYTE_ARRAY_OVERHEAD = (Platform.is64bit() && !COMPRESSED_CLASS_PTRS) ? 24 : 16;
+    // 64-bit  COH: MW8 +      L4 + End Alignment = 16
+    // 64-bit -COH: MW8 + K4 + L4                 = 16
+    // 32-bit     : MW4 + K4 + L4 + End Alignment = 16
+    private static final int BYTE_ARRAY_OVERHEAD = 16;
     private static final int OBJECT_SIZE = 128 * 1024;
 
     private static final int OBJECTS_TO_ALLOCATE = 100;

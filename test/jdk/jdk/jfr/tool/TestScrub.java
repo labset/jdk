@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,16 +23,12 @@
 
 package jdk.jfr.tool;
 
-import java.io.FileWriter;
-import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import jdk.test.lib.Utils;
 import jdk.test.lib.process.OutputAnalyzer;
 import jdk.jfr.Name;
 import jdk.jfr.Recording;
@@ -44,7 +40,7 @@ import jdk.jfr.consumer.RecordingFile;
 /**
  * @test
  * @summary Test jfr scrub
- * @key jfr
+ * @requires vm.flagless
  * @requires vm.hasJFR
  * @library /test/lib /test/jdk
  * @run main/othervm jdk.jfr.tool.TestScrub
@@ -73,9 +69,16 @@ public class TestScrub {
 
         try (Recording r = new Recording()) {
             r.start();
-            emit(100, "India", TigerEvent.class);
-            emit(100, "Namibia", ZebraEvent.class);
-            emit(10000, "Lake Tanganyika", TigerfishEvent.class);
+            emit(50, "India", TigerEvent.class);
+            emit(50, "Namibia", ZebraEvent.class);
+            emit(5000, "Lake Tanganyika", TigerfishEvent.class);
+            // Force rotation
+            try (Recording s = new Recording()) {
+               s.start();
+            }
+            emit(50, "India", TigerEvent.class);
+            emit(50, "Namibia", ZebraEvent.class);
+            emit(5000, "Lake Tanganyika", TigerfishEvent.class);
             r.stop();
             r.dump(file);
         }
@@ -91,6 +94,9 @@ public class TestScrub {
 
         testThreadExclude(file);
         testThreadInclude(file);
+
+        testMissingEventType(file);
+        testSummary(file);
     }
 
     private static void testInputOutput(Path file) throws Throwable {
@@ -248,6 +254,50 @@ public class TestScrub {
             assertThread(event, "Namibia");
             assertNotThread(event, "India", "Lake Tanganyika");
         }
+    }
+
+    private static void testMissingEventType(Path input) throws Throwable {
+        Path output = Path.of("scrubbed.jfr");
+        String[] args = {
+            "scrub",
+            "--exclude-events", "Foo",
+            "--include-events", "example.Zebra",
+            "--include-events", "jdk.Bar",
+            "--include-events", "example.Tigerfish",
+            "--exclude-categories", "Mammal",
+            "--exclude-categories", "jdk.Baz",
+            "--include-categories", "Fish",
+            "--include-categories", "jdk.Qux,jdk.Quuz",
+            input.toAbsolutePath().toString(),
+            output.toAbsolutePath().toString()
+        };
+        var outp = ExecuteHelper.jfr(args);
+        outp.shouldContain("Warning, no event type matched filter: Foo");
+        outp.shouldContain("Warning, no event type matched filter: jdk.Bar");
+        outp.shouldContain("Warning, no event type matched category filter: jdk.Baz");
+        outp.shouldContain("Warning, no event type matched category filter: jdk.Qux,jdk.Quuz");
+        outp.shouldNotContain("Warning, no event type matched filter: example.Zebra");
+        outp.shouldNotContain("Warning, no event type matched filter: example.Tigerfish");
+        outp.shouldNotContain("Warning, no event type matched category filter: Mammal");
+        outp.shouldNotContain("Warning, no event type matched category filter: Fish");
+        Files.delete(output);
+    }
+
+
+    private static void testSummary(Path file) throws Throwable {
+        String inputFile = file.toAbsolutePath().toString();
+
+        String removedZebras = Path.of("removed-zebras.jfr").toAbsolutePath().toString();
+        var outp = ExecuteHelper.jfr("scrub", "--exclude-events", "Zebra", inputFile, removedZebras);
+        outp.shouldContain("Removed events:");
+        outp.shouldContain("example.Zebra 100/100");
+        outp.shouldNotContain("Tiger");
+        outp.shouldNotContain("No events removed");
+
+        String noneRemoved = Path.of("none-removed.jfr").toAbsolutePath().toString();
+        outp = ExecuteHelper.jfr("scrub", "--exclude-events", "jdk.JVMInformation", inputFile, noneRemoved);
+        outp.shouldContain("No events removed");
+        outp.shouldNotContain("jdk.JVMInformation");
     }
 
     private static void assertNotThread(RecordedEvent event, String... threadNames) {

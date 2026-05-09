@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2022, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,7 +28,9 @@ import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
-import java.applet.AudioClip;
+import javax.sound.sampled.Clip;
+import javax.sound.sampled.DataLine;
+import javax.sound.SoundClip;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
@@ -49,6 +51,10 @@ public class DataPusherThreadCheck {
         try {
             AudioFormat format =
                     new AudioFormat(PCM_SIGNED, 44100, 8, 1, 1, 44100, false);
+            DataLine.Info info = new DataLine.Info(Clip.class, format);
+            if (!(AudioSystem.isLineSupported(info)) ) {
+                return; // the test is not applicable
+            }
             int dataSize = 6000*1000 * format.getFrameSize();
             InputStream in = new ByteArrayInputStream(new byte[dataSize]);
             AudioInputStream audioStream = new AudioInputStream(in, format, NOT_SPECIFIED);
@@ -64,7 +70,7 @@ public class DataPusherThreadCheck {
     }
 
     private static void checkThread(File file) throws Exception {
-        AudioClip clip = (AudioClip) file.toURL().getContent();
+        SoundClip clip = SoundClip.createSoundClip(file);
         clip.loop();
         try {
             Thread.sleep(2000);

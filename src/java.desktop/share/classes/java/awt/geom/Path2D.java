@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2006, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -69,6 +69,7 @@ import sun.awt.geom.Curve;
  *
  * @author Jim Graham
  * @since 1.6
+ * @sealedGraph
  */
 public abstract sealed class Path2D implements Shape, Cloneable
     permits Path2D.Double,
@@ -291,6 +292,9 @@ public abstract sealed class Path2D implements Shape, Cloneable
             }
         }
 
+        /**
+         * @since 10
+         */
         @Override
         public final void trimToSize() {
             // trim arrays:
@@ -1177,6 +1181,9 @@ public abstract sealed class Path2D implements Shape, Cloneable
             }
         }
 
+        /**
+         * @since 10
+         */
         @Override
         public final void trimToSize() {
             // trim arrays:
@@ -2306,7 +2313,7 @@ public abstract sealed class Path2D implements Shape, Cloneable
         if (java.lang.Double.isNaN(x+w) || java.lang.Double.isNaN(y+h)) {
             /* [xy]+[wh] is NaN if any of those values are NaN,
              * or if adding the two together would produce NaN
-             * by virtue of adding opposing Infinte values.
+             * by virtue of adding opposing Infinite values.
              * Since we need to add them below, their sum must
              * not be NaN.
              * We return false because NaN always produces a
@@ -2378,7 +2385,7 @@ public abstract sealed class Path2D implements Shape, Cloneable
         if (java.lang.Double.isNaN(x+w) || java.lang.Double.isNaN(y+h)) {
             /* [xy]+[wh] is NaN if any of those values are NaN,
              * or if adding the two together would produce NaN
-             * by virtue of adding opposing Infinte values.
+             * by virtue of adding opposing Infinite values.
              * Since we need to add them below, their sum must
              * not be NaN.
              * We return false because NaN always produces a
@@ -2456,7 +2463,7 @@ public abstract sealed class Path2D implements Shape, Cloneable
         if (java.lang.Double.isNaN(x+w) || java.lang.Double.isNaN(y+h)) {
             /* [xy]+[wh] is NaN if any of those values are NaN,
              * or if adding the two together would produce NaN
-             * by virtue of adding opposing Infinte values.
+             * by virtue of adding opposing Infinite values.
              * Since we need to add them below, their sum must
              * not be NaN.
              * We return false because NaN always produces a
@@ -2527,7 +2534,7 @@ public abstract sealed class Path2D implements Shape, Cloneable
         if (java.lang.Double.isNaN(x+w) || java.lang.Double.isNaN(y+h)) {
             /* [xy]+[wh] is NaN if any of those values are NaN,
              * or if adding the two together would produce NaN
-             * by virtue of adding opposing Infinte values.
+             * by virtue of adding opposing Infinite values.
              * Since we need to add them below, their sum must
              * not be NaN.
              * We return false because NaN always produces a

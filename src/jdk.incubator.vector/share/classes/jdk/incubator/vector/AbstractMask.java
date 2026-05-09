@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,17 +24,19 @@
  */
 package jdk.incubator.vector;
 
-import java.util.Objects;
-
-import jdk.internal.vm.annotation.ForceInline;
-
 import jdk.internal.misc.Unsafe;
-
+import jdk.internal.vm.annotation.ForceInline;
 import jdk.internal.vm.vector.VectorSupport;
 
 import static jdk.incubator.vector.VectorOperators.*;
 
-abstract class AbstractMask<E> extends VectorMask<E> {
+abstract sealed class AbstractMask<E> extends VectorMask<E>
+        permits ByteVector64.ByteMask64, ByteVector128.ByteMask128, ByteVector256.ByteMask256, ByteVector512.ByteMask512, ByteVectorMax.ByteMaskMax,
+        DoubleVector64.DoubleMask64, DoubleVector128.DoubleMask128, DoubleVector256.DoubleMask256, DoubleVector512.DoubleMask512, DoubleVectorMax.DoubleMaskMax,
+        FloatVector64.FloatMask64, FloatVector128.FloatMask128, FloatVector256.FloatMask256, FloatVector512.FloatMask512, FloatVectorMax.FloatMaskMax,
+        IntVector64.IntMask64, IntVector128.IntMask128, IntVector256.IntMask256, IntVector512.IntMask512, IntVectorMax.IntMaskMax,
+        LongVector64.LongMask64, LongVector128.LongMask128, LongVector256.LongMask256, LongVector512.LongMask512, LongVectorMax.LongMaskMax,
+        ShortVector64.ShortMask64, ShortVector128.ShortMask128, ShortVector256.ShortMask256, ShortVector512.ShortMask512, ShortVectorMax.ShortMaskMax {
     AbstractMask(boolean[] bits) {
         super(bits);
     }
@@ -68,25 +70,13 @@ abstract class AbstractMask<E> extends VectorMask<E> {
     }
 
     @Override
-    @ForceInline
-    public boolean laneIsSet(int i) {
-        int length = length();
-        Objects.checkIndex(i, length);
-        if (length <= Long.SIZE) {
-            return ((toLong() >>> i) & 1L) == 1;
-        } else {
-            return getBits()[i];
-        }
-    }
-
-    @Override
     public void intoArray(boolean[] bits, int i) {
         AbstractSpecies<E> vsp = (AbstractSpecies<E>) vectorSpecies();
         int laneCount = vsp.laneCount();
         i = VectorIntrinsics.checkFromIndexSize(i, laneCount, bits.length);
         VectorSupport.store(
-            vsp.maskType(), vsp.elementType(), laneCount,
-            bits, (long) i + Unsafe.ARRAY_BOOLEAN_BASE_OFFSET,
+            vsp.maskType(), vsp.laneTypeOrdinal(), laneCount,
+            bits, (long) i + Unsafe.ARRAY_BOOLEAN_BASE_OFFSET, false,
             this, bits, i,
             (c, idx, s) -> System.arraycopy(s.getBits(), 0, c, (int) idx, s.length()));
 
@@ -137,8 +127,15 @@ abstract class AbstractMask<E> extends VectorMask<E> {
     }
 
     @Override
-    public VectorMask<E> andNot(VectorMask<E> m) {
+    @ForceInline
+    public final VectorMask<E> andNot(VectorMask<E> m) {
         return and(m.not());
+    }
+
+    @Override
+    @ForceInline
+    public final VectorMask<E> eq(VectorMask<E> m) {
+        return xor(m.not());
     }
 
     /*package-private*/
@@ -195,23 +192,50 @@ abstract class AbstractMask<E> extends VectorMask<E> {
         return res;
     }
 
-    @Override
+    /*package-private*/
     @ForceInline
-    public VectorMask<E> indexInRange(int offset, int limit) {
+    VectorMask<E> indexPartiallyInRange(int offset, int limit) {
         int vlength = length();
         Vector<E> iota = vectorSpecies().zero().addIndex(1);
         VectorMask<E> badMask = checkIndex0(offset, limit, iota, vlength);
-        return this.andNot(badMask);
+        return badMask.not();
+    }
+
+    /*package-private*/
+    @ForceInline
+    VectorMask<E> indexPartiallyInRange(long offset, long limit) {
+        int vlength = length();
+        Vector<E> iota = vectorSpecies().zero().addIndex(1);
+        VectorMask<E> badMask = checkIndex0(offset, limit, iota, vlength);
+        return badMask.not();
     }
 
     @Override
     @ForceInline
-    public VectorMask<E> indexInRange(long offset, long limit) {
-        int vlength = length();
-        Vector<E> iota = vectorSpecies().zero().addIndex(1);
-        VectorMask<E> badMask = checkIndex0(offset, limit, iota, vlength);
-        return this.andNot(badMask);
+    public VectorMask<E> indexInRange(int offset, int limit) {
+        if (offset < 0) {
+            return this.and(indexPartiallyInRange(offset, limit));
+        } else if (offset >= limit) {
+            return vectorSpecies().maskAll(false);
+        } else if (limit - offset >= length()) {
+            return this;
+        }
+        return this.and(indexPartiallyInUpperRange(offset, limit));
     }
+
+    @ForceInline
+    public VectorMask<E> indexInRange(long offset, long limit) {
+        if (offset < 0) {
+            return this.and(indexPartiallyInRange(offset, limit));
+        } else if (offset >= limit) {
+            return vectorSpecies().maskAll(false);
+        } else if (limit - offset >= length()) {
+            return this;
+        }
+        return this.and(indexPartiallyInUpperRange(offset, limit));
+    }
+
+    abstract VectorMask<E> indexPartiallyInUpperRange(long offset, long limit);
 
     /*package-private*/
     @ForceInline
@@ -225,7 +249,7 @@ abstract class AbstractMask<E> extends VectorMask<E> {
         // For integral types, *all* lane bits will be set.
         // The bits for -1.0 are like {0b10111*0000*}.
         // FIXME: Use a conversion intrinsic for this operation.
-        // https://bugs.openjdk.java.net/browse/JDK-8225740
+        // https://bugs.openjdk.org/browse/JDK-8225740
         return (AbstractVector<E>) zero.blend(mone, this);
     }
 

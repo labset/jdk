@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -28,12 +28,12 @@ package jdk.javadoc.internal.doclets.formats.html.markup;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.io.Writer;
-import java.util.*;
 
-import jdk.javadoc.internal.doclets.toolkit.Content;
 import jdk.javadoc.internal.doclets.toolkit.util.DocFile;
 import jdk.javadoc.internal.doclets.toolkit.util.DocFileIOException;
-import jdk.javadoc.internal.doclets.toolkit.util.DocletConstants;
+import jdk.javadoc.internal.html.Content;
+import jdk.javadoc.internal.html.DocType;
+import jdk.javadoc.internal.html.HtmlTag;
 
 /**
  * Class for generating an HTML document for javadoc output.
@@ -45,7 +45,7 @@ public class HtmlDocument {
     /**
      * Constructs an HTML document.
      *
-     * @param html the {@link TagName#HTML HTML} element of the document
+     * @param html the {@link HtmlTag#HTML HTML} element of the document
      */
     public HtmlDocument(Content html) {
         docContent = html;
@@ -53,13 +53,14 @@ public class HtmlDocument {
 
     /**
      * Writes the content of this document to the specified file.
+     * Newlines are written using the platform line separator.
      *
      * @param docFile the file
      * @throws DocFileIOException if an {@code IOException} occurs while writing the file
      */
     public void write(DocFile docFile) throws DocFileIOException {
         try (Writer writer = docFile.openWriter()) {
-            write(writer);
+            write(writer, DocFile.PLATFORM_LINE_SEPARATOR);
         } catch (IOException e) {
             throw new DocFileIOException(docFile, DocFileIOException.Mode.WRITE, e);
         }
@@ -68,16 +69,16 @@ public class HtmlDocument {
     @Override
     public String toString() {
         try (Writer writer = new StringWriter()) {
-            write(writer);
+            write(writer, "\n");
             return writer.toString();
         } catch (IOException e) {
             throw new Error(e);
         }
     }
 
-    private void write(Writer writer) throws IOException {
+    private void write(Writer writer, String newline) throws IOException {
         writer.write(docType.text);
-        writer.write(DocletConstants.NL);
-        docContent.write(writer, true);
+        writer.write(newline);
+        docContent.write(writer, newline, true);
     }
 }

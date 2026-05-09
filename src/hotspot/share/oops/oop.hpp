@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,15 +25,17 @@
 #ifndef SHARE_OOPS_OOP_HPP
 #define SHARE_OOPS_OOP_HPP
 
+#include "cppstdlib/type_traits.hpp"
 #include "memory/iterator.hpp"
 #include "memory/memRegion.hpp"
 #include "oops/accessDecorators.hpp"
+#include "oops/compressedKlass.hpp"
 #include "oops/markWord.hpp"
 #include "oops/metadata.hpp"
-#include "runtime/atomic.hpp"
+#include "oops/objLayout.hpp"
+#include "runtime/atomicAccess.hpp"
 #include "utilities/globalDefinitions.hpp"
 #include "utilities/macros.hpp"
-#include <type_traits>
 
 // oopDesc is the top baseclass for objects classes. The {name}Desc classes describe
 // the format of Java objects so the fields can be accessed from C++.
@@ -42,41 +44,39 @@
 //
 // no virtual functions allowed
 
-// Forward declarations.
-class OopClosure;
-class FilteringClosure;
-
-class PSPromotionManager;
-class ParCompactionManager;
-
 class oopDesc {
   friend class VMStructs;
   friend class JVMCIVMStructs;
  private:
   volatile markWord _mark;
-  union _metadata {
-    Klass*      _klass;
-    narrowKlass _compressed_klass;
-  } _metadata;
+  narrowKlass _compressed_klass;
 
   // There may be ordering constraints on the initialization of fields that
   // make use of the C++ copy/assign incorrect.
   NONCOPYABLE(oopDesc);
 
+  inline oop cas_set_forwardee(markWord new_mark, markWord old_mark, atomic_memory_order order);
+
  public:
   // Must be trivial; see verifying static assert after the class.
   oopDesc() = default;
 
+  inline void* base_addr();
+  inline const void* base_addr() const;
+
   inline markWord  mark()          const;
   inline markWord  mark_acquire()  const;
-  inline markWord* mark_addr() const;
 
   inline void set_mark(markWord m);
   static inline void set_mark(HeapWord* mem, markWord m);
+  static inline void release_set_mark(HeapWord* mem, markWord m);
 
   inline void release_set_mark(markWord m);
   inline markWord cas_set_mark(markWord new_mark, markWord old_mark);
   inline markWord cas_set_mark(markWord new_mark, markWord old_mark, atomic_memory_order order);
+
+  // Returns the prototype mark that should be used for this object.
+  inline markWord prototype_mark() const;
 
   // Used only to re-initialize the mark word (e.g., of promoted
   // objects during a GC) -- requires a valid klass pointer
@@ -85,16 +85,26 @@ class oopDesc {
   inline Klass* klass() const;
   inline Klass* klass_or_null() const;
   inline Klass* klass_or_null_acquire() const;
+  // Get the klass without running any asserts.
+  inline Klass* klass_without_asserts() const;
 
   void set_narrow_klass(narrowKlass nk) NOT_CDS_JAVA_HEAP_RETURN;
+  inline narrowKlass narrow_klass() const;
+  inline narrowKlass narrow_klass_acquire() const;
   inline void set_klass(Klass* k);
   static inline void release_set_klass(HeapWord* mem, Klass* k);
 
   // For klass field compression
   static inline void set_klass_gap(HeapWord* mem, int z);
 
-  // size of object header, aligned to platform wordSize
-  static constexpr int header_size() { return sizeof(oopDesc)/HeapWordSize; }
+  // Size of object header, aligned to platform wordSize
+  static int header_size() {
+    if (UseCompactObjectHeaders) {
+      return sizeof(markWord) / HeapWordSize;
+    } else {
+      return sizeof(oopDesc)  / HeapWordSize;
+    }
+  }
 
   // Returns whether this is an instance of k or an instance of a subclass of k
   inline bool is_a(Klass* k) const;
@@ -147,12 +157,15 @@ class oopDesc {
   }
 
   // Access to fields in a instanceOop through these methods.
-  template <DecoratorSet decorator>
+  template<DecoratorSet decorators>
   oop obj_field_access(int offset) const;
   oop obj_field(int offset) const;
+
   void obj_field_put(int offset, oop value);
   void obj_field_put_raw(int offset, oop value);
   void obj_field_put_volatile(int offset, oop value);
+  template<DecoratorSet decorators>
+  void obj_field_put_access(int offset, oop value);
 
   Metadata* metadata_field(int offset) const;
   void metadata_field_put(int offset, Metadata* value);
@@ -201,6 +214,8 @@ class oopDesc {
   jboolean bool_field_acquire(int offset) const;
   void release_bool_field_put(int offset, jboolean contents);
 
+  jint int_field_relaxed(int offset) const;
+  void int_field_put_relaxed(int offset, jint contents);
   jint int_field_acquire(int offset) const;
   void release_int_field_put(int offset, jint contents);
 
@@ -220,9 +235,10 @@ class oopDesc {
   void release_address_field_put(int offset, address contents);
 
   // printing functions for VM debugging
-  void print_on(outputStream* st) const;        // First level print
-  void print_value_on(outputStream* st) const;  // Second level print.
+  void print_on(outputStream* st) const;         // First level print
+  void print_value_on(outputStream* st) const;   // Second level print.
   void print_address_on(outputStream* st) const; // Address printing
+  void print_name_on(outputStream* st) const;    // External name printing.
 
   // printing on default output stream
   void print();
@@ -242,26 +258,30 @@ class oopDesc {
   inline bool is_unlocked() const;
 
   // asserts and guarantees
-  static bool is_oop(oop obj, bool ignore_mark_word = false);
-  static bool is_oop_or_null(oop obj, bool ignore_mark_word = false);
+  static bool is_oop(oop obj);
+  static bool is_oop_or_null(oop obj);
 
   // garbage collection
   inline bool is_gc_marked() const;
 
   // Forward pointer operations for scavenge
   inline bool is_forwarded() const;
-
-  void verify_forwardee(oop forwardee) NOT_DEBUG_RETURN;
+  inline bool is_self_forwarded() const;
 
   inline void forward_to(oop p);
+  inline void forward_to_self();
 
   // Like "forward_to", but inserts the forwarding pointer atomically.
   // Exactly one thread succeeds in inserting the forwarding pointer, and
-  // this call returns "NULL" for that thread; any other thread has the
+  // this call returns null for that thread; any other thread has the
   // value of the forwarding pointer returned and does not modify "this".
   inline oop forward_to_atomic(oop p, markWord compare, atomic_memory_order order = memory_order_conservative);
+  inline oop forward_to_self_atomic(markWord compare, atomic_memory_order order = memory_order_conservative);
 
   inline oop forwardee() const;
+  inline oop forwardee(markWord header) const;
+
+  inline void unset_self_forwarded();
 
   // Age of object during scavenge
   inline uint age() const;
@@ -290,6 +310,7 @@ class oopDesc {
   // identity hash; returns the identity hash key (computes it if necessary)
   inline intptr_t identity_hash();
   intptr_t slow_identity_hash();
+  inline bool fast_no_hash_check();
 
   // marks are forwarded to stack when object is locked
   inline bool     has_displaced_mark() const;
@@ -300,21 +321,35 @@ class oopDesc {
   inline bool mark_must_be_preserved() const;
   inline bool mark_must_be_preserved(markWord m) const;
 
-  static bool has_klass_gap();
+  inline static bool has_klass_gap() {
+    return ObjLayout::oop_has_klass_gap();
+  }
 
   // for code generation
-  static int mark_offset_in_bytes()      { return offset_of(oopDesc, _mark); }
-  static int klass_offset_in_bytes()     { return offset_of(oopDesc, _metadata._klass); }
+  static int mark_offset_in_bytes()      { return (int)offset_of(oopDesc, _mark); }
+  static int klass_offset_in_bytes()     {
+#ifdef _LP64
+    if (UseCompactObjectHeaders) {
+      // NOTE: The only places where this is used with compact headers are the C2
+      // compiler and JVMCI.
+      return mark_offset_in_bytes() + markWord::klass_offset_in_bytes;
+    } else
+#endif
+    {
+      return (int)offset_of(oopDesc, _compressed_klass);
+    }
+  }
   static int klass_gap_offset_in_bytes() {
     assert(has_klass_gap(), "only applicable to compressed klass pointers");
     return klass_offset_in_bytes() + sizeof(narrowKlass);
   }
 
-  // for error reporting
-  static void* load_klass_raw(oop obj);
-  static void* load_oop_raw(oop obj, int offset);
+  static int base_offset_in_bytes() {
+    return ObjLayout::oop_base_offset_in_bytes();
+  }
 
-  DEBUG_ONLY(bool size_might_change();)
+  // for error reporting
+  static void* load_oop_raw(oop obj, int offset);
 };
 
 // An oopDesc is not initialized via a constructor.  Space is allocated in

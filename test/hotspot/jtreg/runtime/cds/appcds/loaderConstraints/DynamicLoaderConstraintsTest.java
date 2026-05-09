@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2020, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -31,8 +31,8 @@
  *          /test/hotspot/jtreg/runtime/cds/appcds/dynamicArchive
  * @modules java.base/jdk.internal.misc
  *          jdk.httpserver
- * @build sun.hotspot.WhiteBox
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:. DynamicLoaderConstraintsTest
  */
 
@@ -47,14 +47,15 @@
  *          /test/hotspot/jtreg/runtime/cds/appcds/dynamicArchive
  * @modules java.base/jdk.internal.misc
  *          jdk.httpserver
- * @build sun.hotspot.WhiteBox
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run main/othervm -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:. DynamicLoaderConstraintsTest custom
  */
 
 /**
  * @test id=custom-cl-zgc
  * @requires vm.cds.custom.loaders
+ * @requires vm.cds.nocoops.archive.available
  * @requires vm.gc.Z
  * @summary Test dumptime_table entries are removed with zgc eager class unloading
  * @bug 8274935
@@ -64,8 +65,8 @@
  *          /test/hotspot/jtreg/runtime/cds/appcds/dynamicArchive
  * @modules java.base/jdk.internal.misc
  *          jdk.httpserver
- * @build sun.hotspot.WhiteBox
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @build jdk.test.whitebox.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run main/othervm/timeout=180 -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI -Xbootclasspath/a:. DynamicLoaderConstraintsTest custom-zgc
  */
 
@@ -130,7 +131,8 @@ public class DynamicLoaderConstraintsTest extends DynamicArchiveTestBase {
   static void doTest(boolean errorInDump) throws Exception  {
         for (int i = 1; i <= 3; i++) {
             System.out.println("========================================");
-            System.out.println("errorInDump: " + errorInDump + ", useCustomLoader: " + useCustomLoader + ", useZGC: " + useZGC + ", case: " + i);
+            System.out.println("errorInDump: " + errorInDump + ", useCustomLoader: " + useCustomLoader +
+                               ", useZGC: " + useZGC + ", case: " + i);
             System.out.println("========================================");
             String topArchiveName = getNewArchiveName();
             String testCase = Integer.toString(i);

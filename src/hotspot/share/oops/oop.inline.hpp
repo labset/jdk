@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,109 +27,127 @@
 
 #include "oops/oop.hpp"
 
+#include "memory/iterator.inline.hpp"
 #include "memory/universe.hpp"
 #include "oops/access.inline.hpp"
 #include "oops/arrayKlass.hpp"
 #include "oops/arrayOop.hpp"
-#include "oops/compressedOops.inline.hpp"
+#include "oops/compressedKlass.inline.hpp"
 #include "oops/instanceKlass.hpp"
-#include "oops/markWord.hpp"
+#include "oops/markWord.inline.hpp"
+#include "oops/objLayout.inline.hpp"
 #include "oops/oopsHierarchy.hpp"
-#include "runtime/atomic.hpp"
+#include "runtime/atomicAccess.hpp"
 #include "runtime/globals.hpp"
 #include "utilities/align.hpp"
 #include "utilities/debug.hpp"
-#include "utilities/macros.hpp"
 #include "utilities/globalDefinitions.hpp"
+#include "utilities/macros.hpp"
 
 // Implementation of all inlined member functions defined in oop.hpp
 // We need a separate file to avoid circular references
 
+void* oopDesc::base_addr() { return this; }
+const void* oopDesc::base_addr() const { return this; }
+
 markWord oopDesc::mark() const {
-  return Atomic::load(&_mark);
+  return AtomicAccess::load(&_mark);
 }
 
 markWord oopDesc::mark_acquire() const {
-  return Atomic::load_acquire(&_mark);
-}
-
-markWord* oopDesc::mark_addr() const {
-  return (markWord*) &_mark;
+  return AtomicAccess::load_acquire(&_mark);
 }
 
 void oopDesc::set_mark(markWord m) {
-  Atomic::store(&_mark, m);
+  AtomicAccess::store(&_mark, m);
 }
 
 void oopDesc::set_mark(HeapWord* mem, markWord m) {
   *(markWord*)(((char*)mem) + mark_offset_in_bytes()) = m;
 }
 
+void oopDesc::release_set_mark(HeapWord* mem, markWord m) {
+  AtomicAccess::release_store((markWord*)(((char*)mem) + mark_offset_in_bytes()), m);
+}
+
 void oopDesc::release_set_mark(markWord m) {
-  Atomic::release_store(&_mark, m);
+  AtomicAccess::release_store(&_mark, m);
 }
 
 markWord oopDesc::cas_set_mark(markWord new_mark, markWord old_mark) {
-  return Atomic::cmpxchg(&_mark, old_mark, new_mark);
+  return AtomicAccess::cmpxchg(&_mark, old_mark, new_mark);
 }
 
 markWord oopDesc::cas_set_mark(markWord new_mark, markWord old_mark, atomic_memory_order order) {
-  return Atomic::cmpxchg(&_mark, old_mark, new_mark, order);
+  return AtomicAccess::cmpxchg(&_mark, old_mark, new_mark, order);
+}
+
+markWord oopDesc::prototype_mark() const {
+  if (UseCompactObjectHeaders) {
+    return klass()->prototype_header();
+  } else {
+    return markWord::prototype();
+  }
 }
 
 void oopDesc::init_mark() {
-  set_mark(markWord::prototype());
+  set_mark(prototype_mark());
 }
 
 Klass* oopDesc::klass() const {
-  if (UseCompressedClassPointers) {
-    return CompressedKlassPointers::decode_not_null(_metadata._compressed_klass);
-  } else {
-    return _metadata._klass;
-  }
+  return CompressedKlassPointers::decode_not_null(narrow_klass());
 }
 
 Klass* oopDesc::klass_or_null() const {
-  if (UseCompressedClassPointers) {
-    return CompressedKlassPointers::decode(_metadata._compressed_klass);
-  } else {
-    return _metadata._klass;
-  }
+  return CompressedKlassPointers::decode(narrow_klass());
 }
 
 Klass* oopDesc::klass_or_null_acquire() const {
-  if (UseCompressedClassPointers) {
-    narrowKlass nklass = Atomic::load_acquire(&_metadata._compressed_klass);
-    return CompressedKlassPointers::decode(nklass);
-  } else {
-    return Atomic::load_acquire(&_metadata._klass);
+  return CompressedKlassPointers::decode(narrow_klass_acquire());
+}
+
+Klass* oopDesc::klass_without_asserts() const {
+  return CompressedKlassPointers::decode_without_asserts(narrow_klass());
+}
+
+narrowKlass oopDesc::narrow_klass() const {
+  switch (ObjLayout::klass_mode()) {
+    case ObjLayout::Compact:
+      return mark().narrow_klass();
+    case ObjLayout::Compressed:
+      return _compressed_klass;
+    default:
+      ShouldNotReachHere();
+  }
+}
+
+narrowKlass oopDesc::narrow_klass_acquire() const {
+  switch (ObjLayout::klass_mode()) {
+    case ObjLayout::Compact:
+      return mark_acquire().narrow_klass();
+    case ObjLayout::Compressed:
+      return AtomicAccess::load_acquire(&_compressed_klass);
+    default:
+      ShouldNotReachHere();
   }
 }
 
 void oopDesc::set_klass(Klass* k) {
-  assert(Universe::is_bootstrapping() || (k != NULL && k->is_klass()), "incorrect Klass");
-  if (UseCompressedClassPointers) {
-    _metadata._compressed_klass = CompressedKlassPointers::encode_not_null(k);
-  } else {
-    _metadata._klass = k;
-  }
+  assert(Universe::is_bootstrapping() || (k != nullptr && k->is_klass()), "incorrect Klass");
+  assert(!UseCompactObjectHeaders, "don't set Klass* with compact headers");
+  _compressed_klass = CompressedKlassPointers::encode_not_null(k);
 }
 
 void oopDesc::release_set_klass(HeapWord* mem, Klass* k) {
-  assert(Universe::is_bootstrapping() || (k != NULL && k->is_klass()), "incorrect Klass");
+  assert(Universe::is_bootstrapping() || (k != nullptr && k->is_klass()), "incorrect Klass");
+  assert(!UseCompactObjectHeaders, "don't set Klass* with compact headers");
   char* raw_mem = ((char*)mem + klass_offset_in_bytes());
-  if (UseCompressedClassPointers) {
-    Atomic::release_store((narrowKlass*)raw_mem,
-                          CompressedKlassPointers::encode_not_null(k));
-  } else {
-    Atomic::release_store((Klass**)raw_mem, k);
-  }
+  AtomicAccess::release_store((narrowKlass*)raw_mem, CompressedKlassPointers::encode_not_null(k));
 }
 
 void oopDesc::set_klass_gap(HeapWord* mem, int v) {
-  if (UseCompressedClassPointers) {
-    *(int*)(((char*)mem) + klass_gap_offset_in_bytes()) = v;
-  }
+  assert(has_klass_gap(), "precondition");
+  *(int*)(((char*)mem) + klass_gap_offset_in_bytes()) = v;
 }
 
 bool oopDesc::is_a(Klass* k) const {
@@ -177,15 +195,15 @@ size_t oopDesc::size_given_klass(Klass* klass)  {
       // skipping the intermediate round to HeapWordSize.
       s = align_up(size_in_bytes, MinObjAlignmentInBytes) / HeapWordSize;
 
-      assert(s == klass->oop_size(this) || size_might_change(), "wrong array object size");
+      assert(s == klass->oop_size(this), "wrong array object size");
     } else {
       // Must be zero, so bite the bullet and take the virtual call.
       s = klass->oop_size(this);
     }
   }
 
-  assert(s > 0, "Oop size must be greater than zero, not " SIZE_FORMAT, s);
-  assert(is_object_aligned(s), "Oop size is not properly aligned: " SIZE_FORMAT, s);
+  assert(s > 0, "Oop size must be greater than zero, not %zu", s);
+  assert(is_object_aligned(s), "Oop size is not properly aligned: %zu", s);
   return s;
 }
 
@@ -207,6 +225,8 @@ inline oop  oopDesc::obj_field_access(int offset) const             { return Hea
 inline oop  oopDesc::obj_field(int offset) const                    { return HeapAccess<>::oop_load_at(as_oop(), offset);  }
 
 inline void oopDesc::obj_field_put(int offset, oop value)           { HeapAccess<>::oop_store_at(as_oop(), offset, value); }
+template <DecoratorSet decorators>
+inline void oopDesc::obj_field_put_access(int offset, oop value)    { HeapAccess<decorators>::oop_store_at(as_oop(), offset, value); }
 
 inline jbyte oopDesc::byte_field(int offset) const                  { return *field_addr<jbyte>(offset);  }
 inline void  oopDesc::byte_field_put(int offset, jbyte value)       { *field_addr<jbyte>(offset) = value; }
@@ -223,6 +243,8 @@ inline void   oopDesc::short_field_put(int offset, jshort value)    { *field_add
 
 inline jint oopDesc::int_field(int offset) const                    { return *field_addr<jint>(offset);     }
 inline void oopDesc::int_field_put(int offset, jint value)          { *field_addr<jint>(offset) = value;    }
+inline jint oopDesc::int_field_relaxed(int offset) const            { return AtomicAccess::load(field_addr<jint>(offset)); }
+inline void oopDesc::int_field_put_relaxed(int offset, jint value)  { AtomicAccess::store(field_addr<jint>(offset), value); }
 
 inline jlong oopDesc::long_field(int offset) const                  { return *field_addr<jlong>(offset);    }
 inline void  oopDesc::long_field_put(int offset, jlong value)       { *field_addr<jlong>(offset) = value;   }
@@ -241,35 +263,62 @@ bool oopDesc::is_unlocked() const {
   return mark().is_unlocked();
 }
 
-// Used only for markSweep, scavenging
 bool oopDesc::is_gc_marked() const {
   return mark().is_marked();
 }
 
 // Used by scavengers
 bool oopDesc::is_forwarded() const {
-  // The extra heap check is needed since the obj might be locked, in which case the
-  // mark would point to a stack location and have the sentinel bit cleared
-  return mark().is_marked();
+  return mark().is_forwarded();
+}
+
+bool oopDesc::is_self_forwarded() const {
+  return mark().is_self_forwarded();
 }
 
 // Used by scavengers
 void oopDesc::forward_to(oop p) {
-  verify_forwardee(p);
+  assert(cast_from_oop<oopDesc*>(p) != this,
+         "must not be used for self-forwarding, use forward_to_self() instead");
   markWord m = markWord::encode_pointer_as_mark(p);
   assert(m.decode_pointer() == p, "encoding must be reversible");
   set_mark(m);
 }
 
-oop oopDesc::forward_to_atomic(oop p, markWord compare, atomic_memory_order order) {
-  verify_forwardee(p);
-  markWord m = markWord::encode_pointer_as_mark(p);
-  assert(m.decode_pointer() == p, "encoding must be reversible");
-  markWord old_mark = cas_set_mark(m, compare, order);
+void oopDesc::forward_to_self() {
+  set_mark(mark().set_self_forwarded());
+}
+
+oop oopDesc::cas_set_forwardee(markWord new_mark, markWord compare, atomic_memory_order order) {
+  markWord old_mark = cas_set_mark(new_mark, compare, order);
   if (old_mark == compare) {
-    return NULL;
+    return nullptr;
   } else {
-    return cast_to_oop(old_mark.decode_pointer());
+    assert(old_mark.is_forwarded(), "must be forwarded here");
+    return forwardee(old_mark);
+  }
+}
+
+oop oopDesc::forward_to_atomic(oop p, markWord compare, atomic_memory_order order) {
+  assert(cast_from_oop<oopDesc*>(p) != this,
+         "must not be used for self-forwarding, use forward_to_self_atomic() instead");
+  markWord m = markWord::encode_pointer_as_mark(p);
+  assert(forwardee(m) == p, "encoding must be reversible");
+  return cas_set_forwardee(m, compare, order);
+}
+
+oop oopDesc::forward_to_self_atomic(markWord old_mark, atomic_memory_order order) {
+  markWord new_mark = old_mark.set_self_forwarded();
+  assert(forwardee(new_mark) == cast_to_oop(this), "encoding must be reversible");
+  return cas_set_forwardee(new_mark, old_mark, order);
+}
+
+oop oopDesc::forwardee(markWord mark) const {
+  assert(mark.is_forwarded(), "only decode when actually forwarded");
+  if (mark.is_self_forwarded()) {
+    return cast_to_oop(this);
+  } else {
+    return mark.forwardee();
   }
 }
 
@@ -277,26 +326,31 @@ oop oopDesc::forward_to_atomic(oop p, markWord compare, atomic_memory_order orde
 // The forwardee is used when copying during scavenge and mark-sweep.
 // It does need to clear the low two locking- and GC-related bits.
 oop oopDesc::forwardee() const {
-  assert(is_forwarded(), "only decode when actually forwarded");
-  return cast_to_oop(mark().decode_pointer());
+  return forwardee(mark());
+}
+
+void oopDesc::unset_self_forwarded() {
+  set_mark(mark().unset_self_forwarded());
 }
 
 // The following method needs to be MT safe.
 uint oopDesc::age() const {
-  assert(!mark().is_marked(), "Attempt to read age from forwarded mark");
-  if (has_displaced_mark()) {
-    return displaced_mark().age();
+  markWord m = mark();
+  assert(!m.is_marked(), "Attempt to read age from forwarded mark");
+  if (m.has_displaced_mark_helper()) {
+    return m.displaced_mark_helper().age();
   } else {
-    return mark().age();
+    return m.age();
   }
 }
 
 void oopDesc::incr_age() {
-  assert(!mark().is_marked(), "Attempt to increment age of forwarded mark");
-  if (has_displaced_mark()) {
-    set_displaced_mark(displaced_mark().incr_age());
+  markWord m = mark();
+  assert(!m.is_marked(), "Attempt to increment age of forwarded mark");
+  if (m.has_displaced_mark_helper()) {
+    m.set_displaced_mark_helper(m.displaced_mark_helper().incr_age());
   } else {
-    set_mark(mark().incr_age());
+    set_mark(m.incr_age());
   }
 }
 
@@ -333,12 +387,13 @@ void oopDesc::oop_iterate_backwards(OopClosureType* cl) {
 
 template <typename OopClosureType>
 void oopDesc::oop_iterate_backwards(OopClosureType* cl, Klass* k) {
+  // In this assert, we cannot safely access the Klass* with compact headers.
   assert(k == klass(), "wrong klass");
   OopIteratorClosureDispatch::oop_oop_iterate_backwards(cl, this, k);
 }
 
 bool oopDesc::is_instanceof_or_null(oop obj, Klass* klass) {
-  return obj == NULL || obj->klass()->is_subtype_of(klass);
+  return obj == nullptr || obj->klass()->is_subtype_of(klass);
 }
 
 intptr_t oopDesc::identity_hash() {
@@ -352,6 +407,14 @@ intptr_t oopDesc::identity_hash() {
   } else {
     return slow_identity_hash();
   }
+}
+
+// This checks fast simple case of whether the oop has_no_hash,
+// to optimize JVMTI table lookup.
+bool oopDesc::fast_no_hash_check() {
+  markWord mrk = mark_acquire();
+  assert(!mrk.is_marked(), "should never be marked");
+  return mrk.is_unlocked() && mrk.has_no_hash();
 }
 
 bool oopDesc::has_displaced_mark() const {
@@ -371,7 +434,7 @@ bool oopDesc::mark_must_be_preserved() const {
 }
 
 bool oopDesc::mark_must_be_preserved(markWord m) const {
-  return m.must_be_preserved(this);
+  return m.must_be_preserved();
 }
 
 #endif // SHARE_OOPS_OOP_INLINE_HPP

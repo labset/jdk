@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2008, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2008, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,8 +23,9 @@
  */
 package com.sun.hotspot.igv.layout;
 
-import java.awt.Dimension;
+import java.awt.Point;
 import java.awt.Rectangle;
+import java.util.List;
 import java.util.Set;
 
 /**
@@ -33,11 +34,17 @@ import java.util.Set;
  */
 public interface Cluster extends Comparable<Cluster> {
 
-    public Cluster getOuter();
+    void setBounds(Rectangle r);
 
-    public void setBounds(Rectangle r);
+    void setPosition(Point p);
 
-    public Set<? extends Cluster> getSuccessors();
+    Point getPosition();
 
-    public Dimension getNodeOffset();
+    Rectangle getBounds();
+
+    List<? extends Vertex> getVertices();
+
+    Set<? extends Cluster> getSuccessors();
+
+    int getLiveRangeSeparation();
 }

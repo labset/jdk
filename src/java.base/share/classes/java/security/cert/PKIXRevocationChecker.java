@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2012, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2012, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,14 +25,7 @@
 package java.security.cert;
 
 import java.net.URI;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Set;
+import java.util.*;
 
 /**
  * A {@code PKIXCertPathChecker} for checking the revocation status of
@@ -88,19 +81,18 @@ import java.util.Set;
  * necessary locking. Multiple threads each manipulating separate objects
  * need not synchronize.
  *
+ * @spec https://www.rfc-editor.org/info/rfc2560
+ *      RFC 2560: X.509 Internet Public Key Infrastructure Online Certificate
+ *              Status Protocol - OCSP
+ * @spec https://www.rfc-editor.org/info/rfc5280
+ *      RFC 5280: Internet X.509 Public Key Infrastructure Certificate
+ *              and Certificate Revocation List (CRL) Profile
  * @since 1.8
- *
- * @see <a href="http://www.ietf.org/rfc/rfc2560.txt"><i>RFC&nbsp;2560: X.509
- * Internet Public Key Infrastructure Online Certificate Status Protocol -
- * OCSP</i></a>
- * @see <a href="http://www.ietf.org/rfc/rfc5280.txt"><i>RFC&nbsp;5280:
- * Internet X.509 Public Key Infrastructure Certificate and Certificate
- * Revocation List (CRL) Profile</i></a>
  */
 public abstract class PKIXRevocationChecker extends PKIXCertPathChecker {
     private URI ocspResponder;
     private X509Certificate ocspResponderCert;
-    private List<Extension> ocspExtensions = Collections.<Extension>emptyList();
+    private List<Extension> ocspExtensions = Collections.emptyList();
     private Map<X509Certificate, byte[]> ocspResponses = Collections.emptyMap();
     private Set<Option> options = Collections.emptySet();
 
@@ -170,7 +162,7 @@ public abstract class PKIXRevocationChecker extends PKIXCertPathChecker {
     public void setOcspExtensions(List<Extension> extensions)
     {
         this.ocspExtensions = (extensions == null)
-                              ? Collections.<Extension>emptyList()
+                              ? Collections.emptyList()
                               : new ArrayList<>(extensions);
     }
 
@@ -196,7 +188,7 @@ public abstract class PKIXRevocationChecker extends PKIXCertPathChecker {
     public void setOcspResponses(Map<X509Certificate, byte[]> responses)
     {
         if (responses == null) {
-            this.ocspResponses = Collections.<X509Certificate, byte[]>emptyMap();
+            this.ocspResponses = Collections.emptyMap();
         } else {
             Map<X509Certificate, byte[]> copy = HashMap.newHashMap(responses.size());
             for (Map.Entry<X509Certificate, byte[]> e : responses.entrySet()) {
@@ -232,7 +224,7 @@ public abstract class PKIXRevocationChecker extends PKIXCertPathChecker {
      */
     public void setOptions(Set<Option> options) {
         this.options = (options == null)
-                       ? Collections.<Option>emptySet()
+                       ? Collections.emptySet()
                        : new HashSet<>(options);
     }
 

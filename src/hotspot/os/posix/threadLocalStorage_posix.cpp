@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2015, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2015, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,6 +24,7 @@
 
 #include "runtime/threadLocalStorage.hpp"
 #include "utilities/debug.hpp"
+
 #include <pthread.h>
 
 static pthread_key_t _thread_key;
@@ -59,7 +60,7 @@ Thread* ThreadLocalStorage::thread() {
   // the initialization process, which is using Thread::current without
   // checking TLS is initialized - see java.cpp vm_exit
   assert(_initialized, "TLS not initialized yet!");
-  return (Thread*) pthread_getspecific(_thread_key); // may be NULL
+  return (Thread*) pthread_getspecific(_thread_key); // may be null
 }
 
 void ThreadLocalStorage::set_thread(Thread* current) {

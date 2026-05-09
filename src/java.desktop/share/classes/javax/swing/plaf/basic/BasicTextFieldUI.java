@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2015, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -51,7 +51,6 @@ import sun.swing.DefaultLookup;
  *
  * @author  Timothy Prinzing
  */
-@SuppressWarnings("serial") // Same-version serialization only
 public class BasicTextFieldUI extends BasicTextUI {
 
     /**
@@ -83,10 +82,10 @@ public class BasicTextFieldUI extends BasicTextUI {
     }
 
     /**
-     * Creates a view (FieldView) based on an element.
+     * Creates a view for an element.
      *
      * @param elem the element
-     * @return the view
+     * @return the view for the element
      */
     public View create(Element elem) {
         Document doc = elem.getDocument();

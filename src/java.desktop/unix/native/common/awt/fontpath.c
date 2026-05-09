@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -47,10 +47,6 @@
 #define AWT_LOCK()
 #define AWT_UNLOCK()
 #endif /* !HEADLESS */
-
-#if defined(__linux__) && !defined(MAP_FAILED)
-#define MAP_FAILED ((caddr_t)-1)
-#endif
 
 #ifndef HEADLESS
 extern Display *awt_display;
@@ -104,7 +100,6 @@ typedef struct {
 jboolean isDisplayLocal(JNIEnv *env) {
     static jboolean isLocal = False;
     static jboolean isLocalSet = False;
-    jboolean ret;
 
     if (! isLocalSet) {
       jclass geCls = (*env)->FindClass(env, "java/awt/GraphicsEnvironment");
@@ -138,7 +133,7 @@ jboolean isDisplayLocal(JNIEnv *env) {
 static char **getX11FontPath ()
 {
     char **x11Path, **fontdirs;
-    int i, pos, slen, nPaths, numDirs;
+    int i, pos, slen, nPaths;
 
     x11Path = XGetFontPath (awt_display, &nPaths);
 
@@ -305,7 +300,7 @@ static char* mergePaths(char **p1, char **p2, char **p3, jboolean noType1) {
  * a set of "known" locations and with the X11 font path, if running in
  * a local X11 environment.
  * The hardwired paths are built into the JDK binary so as new font locations
- * are created on a host plaform for them to be located by the JRE they will
+ * are created on a host platform for them to be located by the JRE they will
  * need to be added ito the host's font configuration database, typically
  * /etc/fonts/local.conf, and to ensure that directory contains a fonts.dir
  * NB: Fontconfig also depends heavily for performance on the host O/S
@@ -537,7 +532,6 @@ static char **getFontConfigLocations() {
 
     char **fontdirs;
     int numdirs = 0;
-    FcInitLoadConfigFuncType FcInitLoadConfig;
     FcPatternBuildFuncType FcPatternBuild;
     FcObjectSetFuncType FcObjectSetBuild;
     FcFontListFuncType FcFontList;
@@ -547,14 +541,10 @@ static char **getFontConfigLocations() {
     FcObjectSetDestroyFuncType FcObjectSetDestroy;
     FcFontSetDestroyFuncType FcFontSetDestroy;
 
-    FcConfig *fontconfig;
     FcPattern *pattern;
     FcObjectSet *objset;
     FcFontSet *fontSet;
-    FcStrList *strList;
-    FcChar8 *str;
-    int i, f, found, len=0;
-    char **fontPath;
+    int i, f, found;
 
     void* libfontconfig = openFontConfig();
 
@@ -1016,7 +1006,7 @@ Java_sun_font_FontConfigManager_getFontConfig
 
         /* fontconfig returned us "nfonts". If we are just getting the
          * first font, we set nfont to zero. Otherwise we use "nfonts".
-         * Next create separate C arrrays of length nfonts for family file etc.
+         * Next create separate C arrays of length nfonts for family file etc.
          * Inspect the returned fonts and the ones we like (adds enough glyphs)
          * are added to the arrays and we increment 'fontCount'.
          */
@@ -1048,7 +1038,7 @@ Java_sun_font_FontConfigManager_getFontConfig
             return;
         }
         fontCount = 0;
-        minGlyphs = 20;
+        minGlyphs = 0;
         if (debugMinGlyphsStr != NULL) {
             int val = minGlyphs;
             sscanf(debugMinGlyphsStr, "%5d", &val);
@@ -1096,14 +1086,6 @@ Java_sun_font_FontConfigManager_getFontConfig
                 return;
             }
 
-            /* We don't want 20 or 30 fonts, so once we hit 10 fonts,
-             * then require that they really be adding value. Too many
-             * adversely affects load time for minimal value-add.
-             * This is still likely far more than we've had in the past.
-             */
-            if (j==10) {
-                minGlyphs = 50;
-            }
             if (unionCharset == NULL) {
                 unionCharset = charset;
             } else {

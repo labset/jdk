@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2001, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2001, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -26,24 +26,19 @@
 #define SHARE_GC_G1_G1CONCURRENTREFINETHREAD_HPP
 
 #include "gc/shared/concurrentGCThread.hpp"
-#include "memory/padded.hpp"
-#include "runtime/semaphore.hpp"
-#include "utilities/macros.hpp"
+#include "runtime/mutex.hpp"
+#include "utilities/globalDefinitions.hpp"
 
 // Forward Decl.
 class G1ConcurrentRefine;
-class G1ConcurrentRefineStats;
 
-// One or more G1 Concurrent Refinement Threads may be active if concurrent
-// refinement is in progress.
+// Concurrent refinement control thread watching card mark accrual on the card table
+// and starting refinement work.
 class G1ConcurrentRefineThread: public ConcurrentGCThread {
-  friend class VMStructs;
   friend class G1CollectedHeap;
 
-  double _vtime_start;  // Initial virtual time.
-  double _vtime_accum;  // Accumulated virtual time.
-
-  G1ConcurrentRefineStats* _refinement_stats;
+  Monitor _notifier;
+  bool _requested_active;
 
   uint _worker_id;
 
@@ -51,17 +46,28 @@ class G1ConcurrentRefineThread: public ConcurrentGCThread {
 
   NONCOPYABLE(G1ConcurrentRefineThread);
 
-protected:
-  G1ConcurrentRefineThread(G1ConcurrentRefine* cr, uint worker_id);
+  G1ConcurrentRefineThread(G1ConcurrentRefine* cr);
+
+  Monitor* notifier() { return &_notifier; }
+  bool requested_active() const { return _requested_active; }
 
   // Returns !should_terminate().
   // precondition: this is the current thread.
-  virtual bool wait_for_completed_buffers() = 0;
+  bool wait_for_work();
 
-  // Called when no refinement work found for this thread.
-  // Returns true if should deactivate.
+  // Deactivate if appropriate.  Returns true if deactivated.
   // precondition: this is the current thread.
-  virtual bool maybe_deactivate() = 0;
+  bool deactivate();
+
+  // Swap card table and do a complete re-examination/refinement pass over the
+  // refinement table.
+  void do_refinement();
+
+  // Update concurrent refine threads cpu time stats.
+  void update_perf_counter_cpu_time();
+
+  void report_active(const char* reason) const;
+  void report_inactive(const char* reason) const;
 
   G1ConcurrentRefine* cr() const { return _cr; }
 
@@ -69,52 +75,14 @@ protected:
   void stop_service() override;
 
 public:
-  static G1ConcurrentRefineThread* create(G1ConcurrentRefine* cr, uint worker_id);
-  virtual ~G1ConcurrentRefineThread();
+  static G1ConcurrentRefineThread* create(G1ConcurrentRefine* cr);
 
   // Activate this thread.
   // precondition: this is not the current thread.
-  virtual void activate() = 0;
+  void activate();
 
-  G1ConcurrentRefineStats* refinement_stats() const {
-    return _refinement_stats;
-  }
-
-  // Total virtual time so far.
-  double vtime_accum() { return _vtime_accum; }
-};
-
-// Singleton special refinement thread, registered with the dirty card queue.
-// This thread supports notification of increases to the number of cards in
-// the dirty card queue, which may trigger activation of this thread when it
-// is not already running.
-class G1PrimaryConcurrentRefineThread final : public G1ConcurrentRefineThread {
-  // Support for activation.  The thread waits on this semaphore when idle.
-  // Calls to activate signal it to wake the thread.
-  Semaphore _notifier;
-  DEFINE_PAD_MINUS_SIZE(0, DEFAULT_CACHE_LINE_SIZE, 0);
-  // Used as both the activation threshold and also the "is active" state.
-  // The value is SIZE_MAX when the thread is active, otherwise the threshold
-  // for signaling the semaphore.
-  volatile size_t _threshold;
-  DEFINE_PAD_MINUS_SIZE(1, DEFAULT_CACHE_LINE_SIZE, sizeof(size_t));
-
-  bool wait_for_completed_buffers() override;
-  bool maybe_deactivate() override;
-
-  G1PrimaryConcurrentRefineThread(G1ConcurrentRefine* cr);
-
-  void stop_service() override;
-
-public:
-  static G1PrimaryConcurrentRefineThread* create(G1ConcurrentRefine* cr);
-
-  void activate() override;
-
-  // Used by the write barrier support to activate the thread if needed when
-  // there are new refinement buffers.
-  void notify(size_t num_cards);
-  void update_notify_threshold(size_t threshold);
+  // Total cpu time spent in this thread so far.
+  jlong cpu_time();
 };
 
 #endif // SHARE_GC_G1_G1CONCURRENTREFINETHREAD_HPP

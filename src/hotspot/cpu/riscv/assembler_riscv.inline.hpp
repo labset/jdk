@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
  * Copyright (c) 2020, 2021, Huawei Technologies Co., Ltd. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
@@ -27,21 +27,24 @@
 #ifndef CPU_RISCV_ASSEMBLER_RISCV_INLINE_HPP
 #define CPU_RISCV_ASSEMBLER_RISCV_INLINE_HPP
 
-#include "asm/assembler.inline.hpp"
+#include "asm/assembler.hpp"
 #include "asm/codeBuffer.hpp"
 #include "code/codeCache.hpp"
 
-inline bool is_imm_in_range(long value, unsigned bits, unsigned align_bits) {
-  intx sign_bits = (value >> (bits + align_bits - 1));
-  return ((value & right_n_bits(align_bits)) == 0) && ((sign_bits == 0) || (sign_bits == -1));
-}
+inline bool Assembler::is_simm5(int64_t x) { return is_simm(x, 5); }
+inline bool Assembler::is_simm6(int64_t x) { return is_simm(x, 6); }
+inline bool Assembler::is_simm12(int64_t x) { return is_simm(x, 12); }
+inline bool Assembler::is_simm13(int64_t x) { return is_simm(x, 13); }
+inline bool Assembler::is_simm18(int64_t x) { return is_simm(x, 18); }
+inline bool Assembler::is_simm21(int64_t x) { return is_simm(x, 21); }
 
-inline bool is_unsigned_imm_in_range(intx value, unsigned bits, unsigned align_bits) {
-  return (value >= 0) && ((value & right_n_bits(align_bits)) == 0) && ((value >> (align_bits + bits)) == 0);
-}
-
-inline bool is_offset_in_range(intx offset, unsigned bits) {
-  return is_imm_in_range(offset, bits, 0);
-}
+inline bool Assembler::is_uimm2(uint64_t x) { return is_uimm(x, 2); }
+inline bool Assembler::is_uimm3(uint64_t x) { return is_uimm(x, 3); }
+inline bool Assembler::is_uimm5(uint64_t x) { return is_uimm(x, 5); }
+inline bool Assembler::is_uimm6(uint64_t x) { return is_uimm(x, 6); }
+inline bool Assembler::is_uimm7(uint64_t x) { return is_uimm(x, 7); }
+inline bool Assembler::is_uimm8(uint64_t x) { return is_uimm(x, 8); }
+inline bool Assembler::is_uimm9(uint64_t x) { return is_uimm(x, 9); }
+inline bool Assembler::is_uimm10(uint64_t x) { return is_uimm(x, 10); }
 
 #endif // CPU_RISCV_ASSEMBLER_RISCV_INLINE_HPP

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,20 +25,40 @@
 package sun.nio.ch;
 
 import java.io.IOException;
+import jdk.internal.vm.ContinuationSupport;
 
 /**
  * Default PollerProvider for Linux.
  */
 class DefaultPollerProvider extends PollerProvider {
-    DefaultPollerProvider() { }
+    DefaultPollerProvider(Poller.Mode mode) {
+        super(mode);
+    }
 
-    @Override
-    Poller readPoller() throws IOException {
-        return new EPollPoller(true);
+    DefaultPollerProvider() {
+        var mode = ContinuationSupport.isSupported()
+                ? Poller.Mode.VTHREAD_POLLERS
+                : Poller.Mode.SYSTEM_THREADS;
+        this(mode);
     }
 
     @Override
-    Poller writePoller() throws IOException {
-        return new EPollPoller(false);
+    int defaultReadPollers() {
+        int ncpus = Runtime.getRuntime().availableProcessors();
+        return switch (pollerMode()) {
+            case SYSTEM_THREADS  -> Math.max(Integer.highestOneBit(ncpus / 4), 1);
+            case VTHREAD_POLLERS -> Math.min(Integer.highestOneBit(ncpus), 32);
+            default              -> super.defaultReadPollers();
+        };
+    }
+
+    @Override
+    Poller readPoller(boolean subPoller) throws IOException {
+        return new EPollPoller(pollerMode(), subPoller, true);
+    }
+
+    @Override
+    Poller writePoller(boolean subPoller) throws IOException {
+        return new EPollPoller(pollerMode(), subPoller, false);
     }
 }

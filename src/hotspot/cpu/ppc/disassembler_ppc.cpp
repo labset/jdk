@@ -28,7 +28,6 @@
 #include "compiler/disassembler.hpp"
 #include "gc/shared/collectedHeap.hpp"
 #include "gc/shared/cardTableBarrierSet.hpp"
-#include "gc/shared/genOopClosures.inline.hpp"
 #include "oops/oop.inline.hpp"
 #include "runtime/handles.inline.hpp"
 #include "runtime/stubCodeGenerator.hpp"
@@ -119,9 +118,6 @@ address Disassembler::decode_instruction0(address here, outputStream * st, addre
     next = here + Assembler::instr_len(here);
   } else if (instruction == 0xbadbabe) {
     st->print(".data 0xbadbabe");
-    next = here + Assembler::instr_len(here);
-  } else if (Assembler::is_endgroup(instruction)) {
-    st->print("endgroup");
     next = here + Assembler::instr_len(here);
   } else {
     next = here;

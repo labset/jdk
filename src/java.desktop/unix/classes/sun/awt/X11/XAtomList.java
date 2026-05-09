@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2003, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -30,7 +30,7 @@ import java.util.*;
 /**
  * Helper class to ease the work with the lists of atoms.
  */
-class XAtomList {
+final class XAtomList {
     Set<XAtom> atoms = new HashSet<XAtom>();
 
     /**
@@ -103,7 +103,7 @@ class XAtomList {
     }
 
     /**
-     * Removes atom from the list. Does nothing if arrays doesn't conaint this atom.
+     * Removes atom from the list. Does nothing if arrays doesn't contain this atom.
      */
     public void remove(XAtom atom) {
         atoms.remove(atom);
@@ -151,6 +151,7 @@ class XAtomList {
         }
     }
 
+    @Override
     public String toString() {
         StringBuilder buf = new StringBuilder();
         buf.append("[");

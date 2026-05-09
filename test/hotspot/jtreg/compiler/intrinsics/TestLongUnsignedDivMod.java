@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2023, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -23,10 +23,10 @@
 
 /**
 * @test
-* @summary Test x86_64 intrinsic for divideUnsigned() and remainderUnsigned() methods for Long
-* @requires os.arch=="amd64" | os.arch=="x86_64"
+* @summary Test intrinsic for divideUnsigned() and remainderUnsigned() methods for Long
+* @requires os.arch=="amd64" | os.arch=="x86_64" | os.arch=="riscv64" | os.arch=="aarch64"
 * @library /test/lib /
-* @run driver compiler.intrinsics.TestLongUnsignedDivMod
+* @run driver/timeout=480 compiler.intrinsics.TestLongUnsignedDivMod
 */
 
 package compiler.intrinsics;
@@ -111,7 +111,7 @@ public class TestLongUnsignedDivMod {
 
     @Test // needs to be run in (fast) debug mode
     @Warmup(10000)
-    @IR(counts = {"UDivL", ">= 1"}) // Atleast one UDivL node is generated if intrinsic is used
+    @IR(counts = {IRNode.UDIV_L, ">= 1"}) // At least one UDivL node is generated if intrinsic is used
     public void testDivideUnsigned() {
         for (int i = 0; i < BUFFER_SIZE; i++) {
             try {
@@ -125,7 +125,7 @@ public class TestLongUnsignedDivMod {
 
     @Test // needs to be run in (fast) debug mode
     @Warmup(10000)
-    @IR(counts = {"UModL", ">= 1"}) // Atleast one UModL node is generated if intrinsic is used
+    @IR(counts = {IRNode.UMOD_L, ">= 1"}) // At least one UModL node is generated if intrinsic is used
     public void testRemainderUnsigned() {
         for (int i = 0; i < BUFFER_SIZE; i++) {
             try {
@@ -140,7 +140,8 @@ public class TestLongUnsignedDivMod {
 
     @Test // needs to be run in (fast) debug mode
     @Warmup(10000)
-    @IR(counts = {"UDivModL", ">= 1"}) // Atleast one UDivModL node is generated if intrinsic is used
+    @IR(applyIfPlatform = {"x64", "true"},
+        counts = {IRNode.UDIV_MOD_L, ">= 1"}) // At least one UDivModL node is generated if intrinsic is used
     public void testDivModUnsigned() {
         for (int i = 0; i < BUFFER_SIZE; i++) {
             try {

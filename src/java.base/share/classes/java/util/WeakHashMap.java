@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,8 +25,8 @@
 
 package java.util;
 
-import java.lang.ref.WeakReference;
 import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -132,7 +132,7 @@ import java.util.function.Consumer;
  * @see         java.util.HashMap
  * @see         java.lang.ref.WeakReference
  */
-public class WeakHashMap<K,V>
+public class WeakHashMap<@jdk.internal.RequiresIdentity K,V>
     extends AbstractMap<K,V>
     implements Map<K,V> {
 
@@ -256,6 +256,7 @@ public class WeakHashMap<K,V>
      * @throws  NullPointerException if the specified map is null
      * @since   1.3
      */
+    @SuppressWarnings("this-escape")
     public WeakHashMap(Map<? extends K, ? extends V> m) {
         this(Math.max((int) Math.ceil(m.size() / (double)DEFAULT_LOAD_FACTOR),
                 DEFAULT_INITIAL_CAPACITY),
@@ -456,7 +457,7 @@ public class WeakHashMap<K,V>
      *         (A {@code null} return can also indicate that the map
      *         previously associated {@code null} with {@code key}.)
      */
-    public V put(K key, V value) {
+    public V put(@jdk.internal.RequiresIdentity K key, V value) {
         Object k = maskNull(key);
         int h = hash(k);
         Entry<K,V>[] tab = getTable();
@@ -1357,6 +1358,9 @@ public class WeakHashMap<K,V>
      * @since 19
      */
     public static <K, V> WeakHashMap<K, V> newWeakHashMap(int numMappings) {
+        if (numMappings < 0) {
+            throw new IllegalArgumentException("Negative number of mappings: " + numMappings);
+        }
         return new WeakHashMap<>(HashMap.calculateHashMapCapacity(numMappings));
     }
 

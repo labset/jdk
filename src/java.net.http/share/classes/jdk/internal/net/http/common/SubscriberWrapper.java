@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -282,7 +282,7 @@ public abstract class SubscriberWrapper
             // If there was an error, send it downstream.
             Throwable error = errorRef.get();
             if (error != null && outputQ.isEmpty()) {
-                synchronized(this) {
+                synchronized (this) {
                     if (downstreamCompleted)
                         return;
                     downstreamCompleted = true;
@@ -459,7 +459,7 @@ public abstract class SubscriberWrapper
     }
 
     void checkCompletion() {
-        if (downstreamCompleted || !upstreamCompleted) {
+        if (downstreamCompleted || (!upstreamCompleted && !completionAcknowledged)) {
             return;
         }
         if (!outputQ.isEmpty()) {

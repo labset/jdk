@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2024, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,8 +24,6 @@
  */
 
 package com.sun.security.ntlm;
-
-import sun.security.action.GetBooleanAction;
 
 import static com.sun.security.ntlm.Version.*;
 import java.io.IOException;
@@ -57,8 +55,7 @@ class NTLM {
     private final MessageDigest md4;
     private final Mac hmac;
     private final MessageDigest md5;
-    private static final boolean DEBUG
-            = GetBooleanAction.privilegedGetProperty("ntlm.debug");
+    private static final boolean DEBUG = Boolean.getBoolean("ntlm.debug");
 
     final Version v;
 
@@ -224,23 +221,27 @@ class NTLM {
             System.arraycopy(data, 0, internal, offset, data.length);
         }
 
-        void writeSecurityBuffer(int offset, byte[] data) {
+        void writeSecurityBuffer(int offset, byte[] data) throws NTLMException {
             if (data == null) {
-                writeShort(offset+4, current);
+                writeInt(offset+4, current);
             } else {
                 int len = data.length;
+                if (len > 65535) {
+                    throw new NTLMException(NTLMException.INVALID_INPUT,
+                            "Invalid data length " + len);
+                }
                 if (current + len > internal.length) {
                     internal = Arrays.copyOf(internal, current + len + 256);
                 }
                 writeShort(offset, len);
                 writeShort(offset+2, len);
-                writeShort(offset+4, current);
+                writeInt(offset+4, current);
                 System.arraycopy(data, 0, internal, current, len);
                 current += len;
             }
         }
 
-        void writeSecurityBuffer(int offset, String str, boolean unicode) {
+        void writeSecurityBuffer(int offset, String str, boolean unicode) throws NTLMException {
             writeSecurityBuffer(offset, str == null ? null : str.getBytes(
                     unicode ? StandardCharsets.UTF_16LE
                             : StandardCharsets.ISO_8859_1));

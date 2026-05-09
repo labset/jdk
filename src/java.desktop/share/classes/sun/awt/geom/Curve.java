@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1998, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1998, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -784,7 +784,7 @@ public abstract class Curve {
      * @param boundsOffset the index in boundsof the minimum value
      * @param x1 the starting value of the bezier curve where t = 0.0
      * @param ctrlX1 the first control value of the bezier curve
-     * @param ctrlX1 the second control value of the bezier curve
+     * @param ctrlX2 the second control value of the bezier curve
      * @param x2 the ending value of the bezier curve where t = 1.0
      * @param coeff an array of at least 3 elements that will be overwritten and reused
      * @param deriv_coeff an array of at least 2 elements that will be overwritten and reused
@@ -1046,6 +1046,9 @@ public abstract class Curve {
             double bump = ymin;
             double maxbump = Math.min(ymin * 1E13, (y1 - y0) * .1);
             double y = y0 + bump;
+            if (!Double.isFinite(y1)) {
+                return 0;
+            }
             while (y <= y1) {
                 if (fairlyClose(this.XforY(y), that.XforY(y))) {
                     if ((bump *= 2) > maxbump) {
@@ -1319,7 +1322,7 @@ public abstract class Curve {
 
     public boolean fairlyClose(double v1, double v2) {
         return (Math.abs(v1 - v2) <
-                Math.max(Math.abs(v1), Math.abs(v2)) * 1E-10);
+                Math.max(Math.abs(v1), Math.abs(v2)) * 1E-8);
     }
 
     public abstract int getSegment(double[] coords);

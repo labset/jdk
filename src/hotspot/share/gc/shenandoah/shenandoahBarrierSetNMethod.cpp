@@ -22,7 +22,6 @@
  *
  */
 
-#include "precompiled.hpp"
 
 #include "gc/shenandoah/shenandoahBarrierSetNMethod.hpp"
 #include "gc/shenandoah/shenandoahClosures.inline.hpp"
@@ -36,13 +35,19 @@
 #include "runtime/threadWXSetters.inline.hpp"
 
 bool ShenandoahBarrierSetNMethod::nmethod_entry_barrier(nmethod* nm) {
-  ShenandoahReentrantLock* lock = ShenandoahNMethod::lock_for_nmethod(nm);
-  assert(lock != NULL, "Must be");
-  ShenandoahReentrantLocker locker(lock);
-
   if (!is_armed(nm)) {
     // Some other thread got here first and healed the oops
-    // and disarmed the nmethod.
+    // and disarmed the nmethod. No need to continue.
+    return true;
+  }
+
+  ShenandoahNMethodLock* lock = ShenandoahNMethod::lock_for_nmethod(nm);
+  assert(lock != nullptr, "Must be");
+  ShenandoahNMethodLocker locker(lock);
+
+  if (!is_armed(nm)) {
+    // Some other thread managed to complete while we were
+    // waiting for lock. No need to continue.
     return true;
   }
 
@@ -63,22 +68,10 @@ bool ShenandoahBarrierSetNMethod::nmethod_entry_barrier(nmethod* nm) {
   // Heal oops
   ShenandoahNMethod::heal_nmethod(nm);
 
-  // CodeCache sweeper support
-  nm->mark_as_maybe_on_continuation();
+  // CodeCache unloading support
+  nm->mark_as_maybe_on_stack();
 
   // Disarm
   ShenandoahNMethod::disarm_nmethod(nm);
   return true;
-}
-
-int ShenandoahBarrierSetNMethod::disarmed_value() const {
-  return ShenandoahCodeRoots::disarmed_value();
-}
-
-ByteSize ShenandoahBarrierSetNMethod::thread_disarmed_offset() const {
-  return ShenandoahThreadLocalData::disarmed_value_offset();
-}
-
-int* ShenandoahBarrierSetNMethod::disarmed_value_address() const {
-  return ShenandoahCodeRoots::disarmed_value_address();
 }

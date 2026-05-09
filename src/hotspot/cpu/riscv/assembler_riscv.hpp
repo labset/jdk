@@ -1,7 +1,7 @@
 /*
- * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, 2020, Red Hat Inc. All rights reserved.
- * Copyright (c) 2020, 2022, Huawei Technologies Co., Ltd. All rights reserved.
+ * Copyright (c) 2020, 2023, Huawei Technologies Co., Ltd. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -27,9 +27,14 @@
 #ifndef CPU_RISCV_ASSEMBLER_RISCV_HPP
 #define CPU_RISCV_ASSEMBLER_RISCV_HPP
 
+#include "asm/assembler.hpp"
 #include "asm/register.hpp"
-#include "assembler_riscv.inline.hpp"
+#include "code/codeCache.hpp"
+#include "cppstdlib/type_traits.hpp"
 #include "metaprogramming/enableIf.hpp"
+#include "utilities/debug.hpp"
+#include "utilities/globalDefinitions.hpp"
+#include "utilities/macros.hpp"
 
 #define XLEN 64
 
@@ -41,8 +46,10 @@
 class Argument {
  public:
   enum {
-    n_int_register_parameters_c   = 8, // x10, x11, ... x17 (c_rarg0, c_rarg1, ...)
-    n_float_register_parameters_c = 8, // f10, f11, ... f17 (c_farg0, c_farg1, ... )
+    // check more info at https://github.com/riscv-non-isa/riscv-elf-psabi-doc/blob/master/riscv-cc.adoc
+    n_int_register_parameters_c   = 8,   // x10, x11, ... x17 (c_rarg0, c_rarg1, ...)
+    n_float_register_parameters_c = 8,   // f10, f11, ... f17 (c_farg0, c_farg1, ... )
+    n_vector_register_parameters_c = 16,  // v8, v9, ... v23
 
     n_int_register_parameters_j   = 8, // x11, ... x17, x10 (j_rarg0, j_rarg1, ...)
     n_float_register_parameters_j = 8  // f10, f11, ... f17 (j_farg0, j_farg1, ...)
@@ -50,23 +57,23 @@ class Argument {
 };
 
 // function argument(caller-save registers)
-REGISTER_DECLARATION(Register, c_rarg0, x10);
-REGISTER_DECLARATION(Register, c_rarg1, x11);
-REGISTER_DECLARATION(Register, c_rarg2, x12);
-REGISTER_DECLARATION(Register, c_rarg3, x13);
-REGISTER_DECLARATION(Register, c_rarg4, x14);
-REGISTER_DECLARATION(Register, c_rarg5, x15);
-REGISTER_DECLARATION(Register, c_rarg6, x16);
-REGISTER_DECLARATION(Register, c_rarg7, x17);
+constexpr Register c_rarg0 = x10;
+constexpr Register c_rarg1 = x11;
+constexpr Register c_rarg2 = x12;
+constexpr Register c_rarg3 = x13;
+constexpr Register c_rarg4 = x14;
+constexpr Register c_rarg5 = x15;
+constexpr Register c_rarg6 = x16;
+constexpr Register c_rarg7 = x17;
 
-REGISTER_DECLARATION(FloatRegister, c_farg0, f10);
-REGISTER_DECLARATION(FloatRegister, c_farg1, f11);
-REGISTER_DECLARATION(FloatRegister, c_farg2, f12);
-REGISTER_DECLARATION(FloatRegister, c_farg3, f13);
-REGISTER_DECLARATION(FloatRegister, c_farg4, f14);
-REGISTER_DECLARATION(FloatRegister, c_farg5, f15);
-REGISTER_DECLARATION(FloatRegister, c_farg6, f16);
-REGISTER_DECLARATION(FloatRegister, c_farg7, f17);
+constexpr FloatRegister c_farg0 = f10;
+constexpr FloatRegister c_farg1 = f11;
+constexpr FloatRegister c_farg2 = f12;
+constexpr FloatRegister c_farg3 = f13;
+constexpr FloatRegister c_farg4 = f14;
+constexpr FloatRegister c_farg5 = f15;
+constexpr FloatRegister c_farg6 = f16;
+constexpr FloatRegister c_farg7 = f17;
 
 // Symbolically name the register arguments used by the Java calling convention.
 // We have control over the convention for java so we can do what we please.
@@ -83,32 +90,32 @@ REGISTER_DECLARATION(FloatRegister, c_farg7, f17);
 // | j_rarg7  j_rarg0  j_rarg1  j_rarg2  j_rarg3  j_rarg4  j_rarg5  j_rarg6 |
 // |------------------------------------------------------------------------|
 
-REGISTER_DECLARATION(Register, j_rarg0, c_rarg1);
-REGISTER_DECLARATION(Register, j_rarg1, c_rarg2);
-REGISTER_DECLARATION(Register, j_rarg2, c_rarg3);
-REGISTER_DECLARATION(Register, j_rarg3, c_rarg4);
-REGISTER_DECLARATION(Register, j_rarg4, c_rarg5);
-REGISTER_DECLARATION(Register, j_rarg5, c_rarg6);
-REGISTER_DECLARATION(Register, j_rarg6, c_rarg7);
-REGISTER_DECLARATION(Register, j_rarg7, c_rarg0);
+constexpr Register j_rarg0 = c_rarg1;
+constexpr Register j_rarg1 = c_rarg2;
+constexpr Register j_rarg2 = c_rarg3;
+constexpr Register j_rarg3 = c_rarg4;
+constexpr Register j_rarg4 = c_rarg5;
+constexpr Register j_rarg5 = c_rarg6;
+constexpr Register j_rarg6 = c_rarg7;
+constexpr Register j_rarg7 = c_rarg0;
 
 // Java floating args are passed as per C
 
-REGISTER_DECLARATION(FloatRegister, j_farg0, f10);
-REGISTER_DECLARATION(FloatRegister, j_farg1, f11);
-REGISTER_DECLARATION(FloatRegister, j_farg2, f12);
-REGISTER_DECLARATION(FloatRegister, j_farg3, f13);
-REGISTER_DECLARATION(FloatRegister, j_farg4, f14);
-REGISTER_DECLARATION(FloatRegister, j_farg5, f15);
-REGISTER_DECLARATION(FloatRegister, j_farg6, f16);
-REGISTER_DECLARATION(FloatRegister, j_farg7, f17);
+constexpr FloatRegister j_farg0 = f10;
+constexpr FloatRegister j_farg1 = f11;
+constexpr FloatRegister j_farg2 = f12;
+constexpr FloatRegister j_farg3 = f13;
+constexpr FloatRegister j_farg4 = f14;
+constexpr FloatRegister j_farg5 = f15;
+constexpr FloatRegister j_farg6 = f16;
+constexpr FloatRegister j_farg7 = f17;
 
 // zero rigster
-REGISTER_DECLARATION(Register, zr,        x0);
+constexpr Register zr = x0;
 // global pointer
-REGISTER_DECLARATION(Register, gp,        x3);
+constexpr Register gp = x3;
 // thread pointer
-REGISTER_DECLARATION(Register, tp,        x4);
+constexpr Register tp = x4;
 
 // registers used to hold VM data either temporarily within a method
 // or across method calls
@@ -116,38 +123,32 @@ REGISTER_DECLARATION(Register, tp,        x4);
 // volatile (caller-save) registers
 
 // current method -- must be in a call-clobbered register
-REGISTER_DECLARATION(Register, xmethod,   x31);
+constexpr Register xmethod =  x31;
 // return address
-REGISTER_DECLARATION(Register, ra,        x1);
+constexpr Register ra      =  x1;
 
 // non-volatile (callee-save) registers
 
-// stack pointer
-REGISTER_DECLARATION(Register, sp,        x2);
-// frame pointer
-REGISTER_DECLARATION(Register, fp,        x8);
-// base of heap
-REGISTER_DECLARATION(Register, xheapbase, x27);
-// constant pool cache
-REGISTER_DECLARATION(Register, xcpool,    x26);
-// monitors allocated on stack
-REGISTER_DECLARATION(Register, xmonitors, x25);
-// locals on stack
-REGISTER_DECLARATION(Register, xlocals,   x24);
-
-// java thread pointer
-REGISTER_DECLARATION(Register, xthread,   x23);
-// bytecode pointer
-REGISTER_DECLARATION(Register, xbcp,      x22);
-// Dispatch table base
-REGISTER_DECLARATION(Register, xdispatch, x21);
-// Java stack pointer
-REGISTER_DECLARATION(Register, esp,       x20);
+constexpr Register sp            = x2; // stack pointer
+constexpr Register fp            = x8; // frame pointer
+constexpr Register xheapbase     = x27; // base of heap
+constexpr Register xcpool        = x26; // constant pool cache
+constexpr Register xmonitors     = x25; // monitors allocated on stack
+constexpr Register xlocals       = x24; // locals on stack
+constexpr Register xthread       = x23; // java thread pointer
+constexpr Register xbcp          = x22; // bytecode pointer
+constexpr Register xdispatch     = x21; // Dispatch table base
+constexpr Register esp           = x20; // Java expression stack pointer
+constexpr Register x19_sender_sp = x19; // Sender's SP while in interpreter
 
 // temporary register(caller-save registers)
-REGISTER_DECLARATION(Register, t0, x5);
-REGISTER_DECLARATION(Register, t1, x6);
-REGISTER_DECLARATION(Register, t2, x7);
+constexpr Register t0 = x5;
+constexpr Register t1 = x6;
+constexpr Register t2 = x7;
+constexpr Register t3 = x28;
+constexpr Register t4 = x29;
+constexpr Register t5 = x30;
+constexpr Register t6 = x31;
 
 const Register g_INTArgReg[Argument::n_int_register_parameters_c] = {
   c_rarg0, c_rarg1, c_rarg2, c_rarg3, c_rarg4, c_rarg5, c_rarg6, c_rarg7
@@ -163,62 +164,127 @@ const FloatRegister g_FPArgReg[Argument::n_float_register_parameters_c] = {
 class Address {
  public:
 
-  enum mode { no_mode, base_plus_offset, pcrel, literal };
+  enum mode { no_mode, base_plus_offset, literal };
 
  private:
-  Register _base;
-  Register _index;
-  int64_t _offset;
+  struct Nonliteral {
+    Nonliteral(Register base, Register index, int64_t offset)
+      : _base(base), _index(index), _offset(offset) {}
+    Register _base;
+    Register _index;
+    int64_t _offset;
+  };
+
+  struct Literal {
+    Literal(address target, const RelocationHolder& rspec)
+      : _target(target), _rspec(rspec) {}
+    // If the target is far we'll need to load the ea of this to a
+    // register to reach it. Otherwise if near we can do PC-relative
+    // addressing.
+    address _target;
+
+    RelocationHolder _rspec;
+  };
+
+  void assert_is_nonliteral() const NOT_DEBUG_RETURN;
+  void assert_is_literal() const NOT_DEBUG_RETURN;
+
+  // Discriminated union, based on _mode.
+  // - no_mode: uses dummy _nonliteral, for ease of copying.
+  // - literal: only _literal is used.
+  // - others: only _nonliteral is used.
   enum mode _mode;
+  union {
+    Nonliteral _nonliteral;
+    Literal _literal;
+  };
 
-  RelocationHolder _rspec;
-
-  // If the target is far we'll need to load the ea of this to a
-  // register to reach it. Otherwise if near we can do PC-relative
-  // addressing.
-  address          _target;
+  // Helper for copy constructor and assignment operator.
+  // Copy mode-relevant part of a into this.
+  void copy_data(const Address& a) {
+    assert(_mode == a._mode, "precondition");
+    if (_mode == literal) {
+      new (&_literal) Literal(a._literal);
+    } else {
+      // non-literal mode or no_mode.
+      new (&_nonliteral) Nonliteral(a._nonliteral);
+    }
+  }
 
  public:
-  Address()
-    : _base(noreg), _index(noreg), _offset(0), _mode(no_mode), _target(NULL) { }
-  Address(Register r)
-    : _base(r), _index(noreg), _offset(0), _mode(base_plus_offset), _target(NULL) { }
+  // no_mode initializes _nonliteral for ease of copying.
+  Address() :
+    _mode(no_mode),
+    _nonliteral(noreg, noreg, 0)
+  {}
+
+  Address(Register r) :
+    _mode(base_plus_offset),
+    _nonliteral(r, noreg, 0)
+  {}
 
   template<typename T, ENABLE_IF(std::is_integral<T>::value)>
-  Address(Register r, T o)
-    : _base(r), _index(noreg), _offset(o), _mode(base_plus_offset), _target(NULL) {}
+  Address(Register r, T o) :
+    _mode(base_plus_offset),
+    _nonliteral(r, noreg, o)
+  {}
 
-  Address(Register r, ByteSize disp)
-    : Address(r, in_bytes(disp)) {}
-  Address(address target, RelocationHolder const& rspec)
-    : _base(noreg),
-      _index(noreg),
-      _offset(0),
-      _mode(literal),
-      _rspec(rspec),
-      _target(target) { }
+  Address(Register r, ByteSize disp) : Address(r, in_bytes(disp)) {}
+
+  Address(address target, const RelocationHolder& rspec) :
+    _mode(literal),
+    _literal(target, rspec)
+  {}
+
   Address(address target, relocInfo::relocType rtype = relocInfo::external_word_type);
 
+  Address(const Address& a) : _mode(a._mode) { copy_data(a); }
+
+  // Verify the value is trivially destructible regardless of mode, so our
+  // destructor can also be trivial, and so our assignment operator doesn't
+  // need to destruct the old value before copying over it.
+  static_assert(std::is_trivially_destructible<Literal>::value, "must be");
+  static_assert(std::is_trivially_destructible<Nonliteral>::value, "must be");
+
+  Address& operator=(const Address& a) {
+    _mode = a._mode;
+    copy_data(a);
+    return *this;
+  }
+
+  ~Address() = default;
+
   const Register base() const {
-    guarantee((_mode == base_plus_offset | _mode == pcrel | _mode == literal), "wrong mode");
-    return _base;
+    assert_is_nonliteral();
+    return _nonliteral._base;
   }
+
   long offset() const {
-    return _offset;
+    assert_is_nonliteral();
+    return _nonliteral._offset;
   }
+
   Register index() const {
-    return _index;
+    assert_is_nonliteral();
+    return _nonliteral._index;
   }
+
   mode getMode() const {
     return _mode;
   }
 
-  bool uses(Register reg) const { return _base == reg; }
-  const address target() const { return _target; }
-  const RelocationHolder& rspec() const { return _rspec; }
-  ~Address() {
-    _target = NULL;
-    _base = NULL;
+  bool uses(Register reg) const {
+    return _mode != literal && base() == reg;
+  }
+
+  address target() const {
+    assert_is_literal();
+    return _literal._target;
+  }
+
+  const RelocationHolder& rspec() const {
+    assert_is_literal();
+    return _literal._rspec;
   }
 };
 
@@ -264,7 +330,150 @@ class InternalAddress: public Address {
 };
 
 class Assembler : public AbstractAssembler {
-public:
+protected:
+
+  static int zfa_zli_lookup_double(uint64_t value) {
+    switch(value) {
+      case 0xbff0000000000000 : return   0;
+      case 0x0010000000000000 : return   1;
+      case 0x3ef0000000000000 : return   2;
+      case 0x3f00000000000000 : return   3;
+      case 0x3f70000000000000 : return   4;
+      case 0x3f80000000000000 : return   5;
+      case 0x3fb0000000000000 : return   6;
+      case 0x3fc0000000000000 : return   7;
+      case 0x3fd0000000000000 : return   8;
+      case 0x3fd4000000000000 : return   9;
+      case 0x3fd8000000000000 : return  10;
+      case 0x3fdc000000000000 : return  11;
+      case 0x3fe0000000000000 : return  12;
+      case 0x3fe4000000000000 : return  13;
+      case 0x3fe8000000000000 : return  14;
+      case 0x3fec000000000000 : return  15;
+      case 0x3ff0000000000000 : return  16;
+      case 0x3ff4000000000000 : return  17;
+      case 0x3ff8000000000000 : return  18;
+      case 0x3ffc000000000000 : return  19;
+      case 0x4000000000000000 : return  20;
+      case 0x4004000000000000 : return  21;
+      case 0x4008000000000000 : return  22;
+      case 0x4010000000000000 : return  23;
+      case 0x4020000000000000 : return  24;
+      case 0x4030000000000000 : return  25;
+      case 0x4060000000000000 : return  26;
+      case 0x4070000000000000 : return  27;
+      case 0x40e0000000000000 : return  28;
+      case 0x40f0000000000000 : return  29;
+      case 0x7ff0000000000000 : return  30;
+      case 0x7ff8000000000000 : return  31;
+      default: break;
+    }
+    return -1;
+  }
+
+  static int zfa_zli_lookup_float(uint32_t value) {
+    switch(value) {
+      case 0xbf800000 : return  0;
+      case 0x00800000 : return  1;
+      case 0x37800000 : return  2;
+      case 0x38000000 : return  3;
+      case 0x3b800000 : return  4;
+      case 0x3c000000 : return  5;
+      case 0x3d800000 : return  6;
+      case 0x3e000000 : return  7;
+      case 0x3e800000 : return  8;
+      case 0x3ea00000 : return  9;
+      case 0x3ec00000 : return 10;
+      case 0x3ee00000 : return 11;
+      case 0x3f000000 : return 12;
+      case 0x3f200000 : return 13;
+      case 0x3f400000 : return 14;
+      case 0x3f600000 : return 15;
+      case 0x3f800000 : return 16;
+      case 0x3fa00000 : return 17;
+      case 0x3fc00000 : return 18;
+      case 0x3fe00000 : return 19;
+      case 0x40000000 : return 20;
+      case 0x40200000 : return 21;
+      case 0x40400000 : return 22;
+      case 0x40800000 : return 23;
+      case 0x41000000 : return 24;
+      case 0x41800000 : return 25;
+      case 0x43000000 : return 26;
+      case 0x43800000 : return 27;
+      case 0x47000000 : return 28;
+      case 0x47800000 : return 29;
+      case 0x7f800000 : return 30;
+      case 0x7fc00000 : return 31;
+      default: break;
+    }
+    return -1;
+  }
+
+  static int zfa_zli_lookup_half_float(uint16_t value) {
+    switch(value) {
+      case 0xbc00 : return  0;
+      case 0x0400 : return  1;
+      case 0x0100 : return  2;
+      case 0x0200 : return  3;
+      case 0x1c00 : return  4;
+      case 0x2000 : return  5;
+      case 0x2c00 : return  6;
+      case 0x3000 : return  7;
+      case 0x3400 : return  8;
+      case 0x3500 : return  9;
+      case 0x3600 : return 10;
+      case 0x3700 : return 11;
+      case 0x3800 : return 12;
+      case 0x3900 : return 13;
+      case 0x3a00 : return 14;
+      case 0x3b00 : return 15;
+      case 0x3c00 : return 16;
+      case 0x3d00 : return 17;
+      case 0x3e00 : return 18;
+      case 0x3f00 : return 19;
+      case 0x4000 : return 20;
+      case 0x4100 : return 21;
+      case 0x4200 : return 22;
+      case 0x4400 : return 23;
+      case 0x4800 : return 24;
+      case 0x4c00 : return 25;
+      case 0x5800 : return 26;
+      case 0x5c00 : return 27;
+      case 0x7800 : return 28;
+      case 0x7c00 : return 29;
+      // case 0x7c00 : return 30; // redundant with 29
+      case 0x7e00 : return 31;
+      default: break;
+    }
+    return -1;
+  }
+
+ public:
+
+  static bool can_zfa_zli_half_float(jshort hf) {
+    if (!UseZfa || !UseZfh) {
+      return false;
+    }
+    uint16_t hf_bits = (uint16_t)hf;
+    return zfa_zli_lookup_half_float(hf_bits) != -1;
+  }
+
+  static bool can_zfa_zli_float(jfloat f) {
+    if (!UseZfa) {
+      return false;
+    }
+    uint32_t f_bits = (uint32_t)jint_cast(f);
+    return zfa_zli_lookup_float(f_bits) != -1;
+  }
+
+  static bool can_zfa_zli_double(jdouble d) {
+    if (!UseZfa) {
+      return false;
+    }
+    uint64_t d_bits = (uint64_t)julong_cast(d);
+    return zfa_zli_lookup_double(d_bits) != -1;
+  }
 
   enum {
     instruction_size = 4,
@@ -305,57 +514,20 @@ public:
     rdy = 0b111,     // in instruction's rm field, selects dynamic rounding mode.In Rounding Mode register, Invalid.
   };
 
-  void baseOffset32(Register Rd, const Address &adr, int32_t &offset) {
-    assert(Rd != noreg, "Rd must not be empty register!");
-    guarantee(Rd != adr.base(), "should use different registers!");
-    if (is_offset_in_range(adr.offset(), 32)) {
-      int32_t imm = adr.offset();
-      int32_t upper = imm, lower = imm;
-      lower = (imm << 20) >> 20;
-      upper -= lower;
-      lui(Rd, upper);
-      offset = lower;
-    } else {
-      movptr_with_offset(Rd, (address)(uintptr_t)adr.offset(), offset);
-    }
-    add(Rd, Rd, adr.base());
+  // handle unaligned access
+  static inline uint16_t ld_c_instr(address addr) {
+    return Bytes::get_native_u2(addr);
+  }
+  static inline void sd_c_instr(address addr, uint16_t c_instr) {
+    Bytes::put_native_u2(addr, c_instr);
   }
 
-  void baseOffset(Register Rd, const Address &adr, int32_t &offset) {
-    if (is_offset_in_range(adr.offset(), 12)) {
-      assert(Rd != noreg, "Rd must not be empty register!");
-      addi(Rd, adr.base(), adr.offset());
-      offset = 0;
-    } else {
-      baseOffset32(Rd, adr, offset);
-    }
+  // handle unaligned access
+  static inline uint32_t ld_instr(address addr) {
+    return Bytes::get_native_u4(addr);
   }
-
-  void _li(Register Rd, int64_t imm);  // optimized load immediate
-  void li32(Register Rd, int32_t imm);
-  void li64(Register Rd, int64_t imm);
-  void movptr(Register Rd, address addr);
-  void movptr_with_offset(Register Rd, address addr, int32_t &offset);
-  void movptr(Register Rd, uintptr_t imm64);
-  void ifence();
-  void j(const address &dest, Register temp = t0);
-  void j(const Address &adr, Register temp = t0);
-  void j(Label &l, Register temp = t0);
-  void jal(Label &l, Register temp = t0);
-  void jal(const address &dest, Register temp = t0);
-  void jal(const Address &adr, Register temp = t0);
-  void jr(Register Rs);
-  void jalr(Register Rs);
-  void ret();
-  void call(const address &dest, Register temp = t0);
-  void call(const Address &adr, Register temp = t0);
-  void tail(const address &dest, Register temp = t0);
-  void tail(const Address &adr, Register temp = t0);
-  void call(Label &l, Register temp) {
-    call(target(l), temp);
-  }
-  void tail(Label &l, Register temp) {
-    tail(target(l), temp);
+  static inline void sd_instr(address addr, uint32_t instr) {
+    Bytes::put_native_u4(addr, instr);
   }
 
   static inline uint32_t extract(uint32_t val, unsigned msb, unsigned lsb) {
@@ -375,17 +547,17 @@ public:
   }
 
   static void patch(address a, unsigned msb, unsigned lsb, unsigned val) {
-    assert_cond(a != NULL);
+    assert_cond(a != nullptr);
     assert_cond(msb >= lsb && msb <= 31);
     unsigned nbits = msb - lsb + 1;
     guarantee(val < (1U << nbits), "Field too big for insn");
     unsigned mask = (1U << nbits) - 1;
     val <<= lsb;
     mask <<= lsb;
-    unsigned target = *(unsigned *)a;
+    unsigned target = ld_instr(a);
     target &= ~mask;
     target |= val;
-    *(unsigned *)a = target;
+    sd_instr(a, target);
   }
 
   static void patch(address a, unsigned bit, unsigned val) {
@@ -393,15 +565,15 @@ public:
   }
 
   static void patch_reg(address a, unsigned lsb, Register reg) {
-    patch(a, lsb + 4, lsb, reg->encoding_nocheck());
+    patch(a, lsb + 4, lsb, reg->raw_encoding());
   }
 
   static void patch_reg(address a, unsigned lsb, FloatRegister reg) {
-    patch(a, lsb + 4, lsb, reg->encoding_nocheck());
+    patch(a, lsb + 4, lsb, reg->raw_encoding());
   }
 
   static void patch_reg(address a, unsigned lsb, VectorRegister reg) {
-    patch(a, lsb + 4, lsb, reg->encoding_nocheck());
+    patch(a, lsb + 4, lsb, reg->raw_encoding());
   }
 
   void emit(unsigned insn) {
@@ -483,7 +655,7 @@ public:
   INSN(sllw,  0b0111011, 0b001, 0b0000000);
   INSN(sraw,  0b0111011, 0b101, 0b0100000);
   INSN(srlw,  0b0111011, 0b101, 0b0000000);
-  INSN(mul,   0b0110011, 0b000, 0b0000001);
+  INSN(_mul,  0b0110011, 0b000, 0b0000001);
   INSN(mulh,  0b0110011, 0b001, 0b0000001);
   INSN(mulhsu,0b0110011, 0b010, 0b0000001);
   INSN(mulhu, 0b0110011, 0b011, 0b0000001);
@@ -499,156 +671,90 @@ public:
 
 #undef INSN
 
-#define INSN_ENTRY_RELOC(result_type, header)                               \
-  result_type header {                                                      \
-    InstructionMark im(this);                                               \
-    guarantee(rtype == relocInfo::internal_word_type,                       \
-              "only internal_word_type relocs make sense here");            \
-    code_section()->relocate(inst_mark(), InternalAddress(dest).rspec());
+ private:
+  // Load
+  enum LoadWidthFunct3 : uint8_t {
+    LOAD_WIDTH_BYTE              = 0b000,
+    LOAD_WIDTH_HALFWORD          = 0b001,
+    LOAD_WIDTH_WORD              = 0b010,
+    LOAD_WIDTH_DOUBLEWORD        = 0b011,
+    LOAD_WIDTH_BYTE_UNSIGNED     = 0b100,
+    LOAD_WIDTH_HALFWORD_UNSIGNED = 0b101,
+    LOAD_WIDTH_WORD_UNSIGNED     = 0b110,
+    // 0b111 is reserved
+  };
 
-  // Load/store register (all modes)
-#define INSN(NAME, op, funct3)                                                                     \
-  void NAME(Register Rd, Register Rs, const int32_t offset) {                                      \
-    guarantee(is_offset_in_range(offset, 12), "offset is invalid.");                               \
-    unsigned insn = 0;                                                                             \
-    int32_t val = offset & 0xfff;                                                                  \
-    patch((address)&insn, 6, 0, op);                                                               \
-    patch((address)&insn, 14, 12, funct3);                                                         \
-    patch_reg((address)&insn, 15, Rs);                                                             \
-    patch_reg((address)&insn, 7, Rd);                                                              \
-    patch((address)&insn, 31, 20, val);                                                            \
-    emit(insn);                                                                                    \
+  static constexpr uint8_t OP_LOAD_MAJOR    = 0b0000011;
+  static constexpr uint8_t OP_FP_LOAD_MAJOR = 0b0000111;
+
+  template <uint8_t op_major, LoadWidthFunct3 width>
+  void load_base(uint8_t Rd, Register Rs, const int32_t offset) {
+    guarantee(is_simm12(offset), "offset is invalid.");
+    unsigned insn = 0;
+    int32_t val = offset & 0xfff;
+    patch((address)&insn,  6,  0, op_major);
+    patch((address)&insn, 11,  7, Rd);
+    patch((address)&insn, 14, 12, width);
+    patch_reg((address)&insn, 15, Rs);
+    patch((address)&insn, 31, 20, val);
+    emit(insn);
   }
 
-  INSN(lb,  0b0000011, 0b000);
-  INSN(lbu, 0b0000011, 0b100);
-  INSN(lh,  0b0000011, 0b001);
-  INSN(lhu, 0b0000011, 0b101);
-  INSN(_lw, 0b0000011, 0b010);
-  INSN(lwu, 0b0000011, 0b110);
-  INSN(_ld, 0b0000011, 0b011);
-
-#undef INSN
-
-#define INSN(NAME)                                                                                 \
-  void NAME(Register Rd, address dest) {                                                           \
-    assert_cond(dest != NULL);                                                                     \
-    int64_t distance = (dest - pc());                                                              \
-    if (is_offset_in_range(distance, 32)) {                                                        \
-      auipc(Rd, (int32_t)distance + 0x800);                                                        \
-      NAME(Rd, Rd, ((int32_t)distance << 20) >> 20);                                               \
-    } else {                                                                                       \
-      int32_t offset = 0;                                                                          \
-      movptr_with_offset(Rd, dest, offset);                                                        \
-      NAME(Rd, Rd, offset);                                                                        \
-    }                                                                                              \
-  }                                                                                                \
-  INSN_ENTRY_RELOC(void, NAME(Register Rd, address dest, relocInfo::relocType rtype))              \
-    NAME(Rd, dest);                                                                                \
-  }                                                                                                \
-  void NAME(Register Rd, const Address &adr, Register temp = t0) {                                 \
-    switch (adr.getMode()) {                                                                       \
-      case Address::literal: {                                                                     \
-        code_section()->relocate(pc(), adr.rspec());                                               \
-        NAME(Rd, adr.target());                                                                    \
-        break;                                                                                     \
-      }                                                                                            \
-      case Address::base_plus_offset: {                                                            \
-        if (is_offset_in_range(adr.offset(), 12)) {                                                \
-          NAME(Rd, adr.base(), adr.offset());                                                      \
-        } else {                                                                                   \
-          int32_t offset = 0;                                                                      \
-          if (Rd == adr.base()) {                                                                  \
-            baseOffset32(temp, adr, offset);                                                       \
-            NAME(Rd, temp, offset);                                                                \
-          } else {                                                                                 \
-            baseOffset32(Rd, adr, offset);                                                         \
-            NAME(Rd, Rd, offset);                                                                  \
-          }                                                                                        \
-        }                                                                                          \
-        break;                                                                                     \
-      }                                                                                            \
-      default:                                                                                     \
-        ShouldNotReachHere();                                                                      \
-    }                                                                                              \
-  }                                                                                                \
-  void NAME(Register Rd, Label &L) {                                                               \
-    wrap_label(Rd, L, &Assembler::NAME);                                                           \
+  template <LoadWidthFunct3 width>
+  void load_base(Register Rd, Register Rs, const int32_t offset) {
+    load_base<OP_LOAD_MAJOR, width>(Rd->raw_encoding(), Rs, offset);
   }
 
-  INSN(lb);
-  INSN(lbu);
-  INSN(lh);
-  INSN(lhu);
-  INSN(lw);
-  INSN(lwu);
-  INSN(ld);
-
-#undef INSN
-
-#define INSN(NAME, op, funct3)                                                                     \
-  void NAME(FloatRegister Rd, Register Rs, const int32_t offset) {                                 \
-    guarantee(is_offset_in_range(offset, 12), "offset is invalid.");                               \
-    unsigned insn = 0;                                                                             \
-    uint32_t val = offset & 0xfff;                                                                 \
-    patch((address)&insn, 6, 0, op);                                                               \
-    patch((address)&insn, 14, 12, funct3);                                                         \
-    patch_reg((address)&insn, 15, Rs);                                                             \
-    patch_reg((address)&insn, 7, Rd);                                                              \
-    patch((address)&insn, 31, 20, val);                                                            \
-    emit(insn);                                                                                    \
+  template <LoadWidthFunct3 width>
+  void load_base(FloatRegister Rd, Register Rs, const int32_t offset) {
+    load_base<OP_FP_LOAD_MAJOR, width>(Rd->raw_encoding(), Rs, offset);
   }
 
-  INSN(flw,  0b0000111, 0b010);
-  INSN(_fld, 0b0000111, 0b011);
+ public:
 
-#undef INSN
-
-#define INSN(NAME)                                                                                 \
-  void NAME(FloatRegister Rd, address dest, Register temp = t0) {                                  \
-    assert_cond(dest != NULL);                                                                     \
-    int64_t distance = (dest - pc());                                                              \
-    if (is_offset_in_range(distance, 32)) {                                                        \
-      auipc(temp, (int32_t)distance + 0x800);                                                      \
-      NAME(Rd, temp, ((int32_t)distance << 20) >> 20);                                             \
-    } else {                                                                                       \
-      int32_t offset = 0;                                                                          \
-      movptr_with_offset(temp, dest, offset);                                                      \
-      NAME(Rd, temp, offset);                                                                      \
-    }                                                                                              \
-  }                                                                                                \
-  INSN_ENTRY_RELOC(void, NAME(FloatRegister Rd, address dest, relocInfo::relocType rtype, Register temp = t0)) \
-    NAME(Rd, dest, temp);                                                                          \
-  }                                                                                                \
-  void NAME(FloatRegister Rd, const Address &adr, Register temp = t0) {                            \
-    switch (adr.getMode()) {                                                                       \
-      case Address::literal: {                                                                     \
-        code_section()->relocate(pc(), adr.rspec());                                               \
-        NAME(Rd, adr.target(), temp);                                                              \
-        break;                                                                                     \
-      }                                                                                            \
-      case Address::base_plus_offset: {                                                            \
-        if (is_offset_in_range(adr.offset(), 12)) {                                                \
-          NAME(Rd, adr.base(), adr.offset());                                                      \
-        } else {                                                                                   \
-          int32_t offset = 0;                                                                      \
-          baseOffset32(temp, adr, offset);                                                         \
-          NAME(Rd, temp, offset);                                                                  \
-        }                                                                                          \
-        break;                                                                                     \
-      }                                                                                            \
-      default:                                                                                     \
-        ShouldNotReachHere();                                                                      \
-    }                                                                                              \
+  void lb(Register Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_BYTE>(Rd, Rs, offset);
   }
 
-  INSN(flw);
-  INSN(fld);
-#undef INSN
+  void _lbu(Register Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_BYTE_UNSIGNED>(Rd, Rs, offset);
+  }
+
+  void _lh(Register Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_HALFWORD>(Rd, Rs, offset);
+  }
+
+  void _lhu(Register Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_HALFWORD_UNSIGNED>(Rd, Rs, offset);
+  }
+
+  void _lw(Register Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_WORD>(Rd, Rs, offset);
+  }
+
+  void lwu(Register Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_WORD_UNSIGNED>(Rd, Rs, offset);
+  }
+
+  void _ld(Register Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_DOUBLEWORD>(Rd, Rs, offset);
+  }
+
+  void flh(FloatRegister Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_HALFWORD>(Rd, Rs, offset);
+  }
+
+  void flw(FloatRegister Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_WORD>(Rd, Rs, offset);
+  }
+
+  void _fld(FloatRegister Rd, Register Rs, const int32_t offset) {
+    load_base<LOAD_WIDTH_DOUBLEWORD>(Rd, Rs, offset);
+  }
 
 #define INSN(NAME, op, funct3)                                                                           \
   void NAME(Register Rs1, Register Rs2, const int64_t offset) {                                          \
-    guarantee(is_imm_in_range(offset, 12, 1), "offset is invalid.");                                     \
+    guarantee(is_simm13(offset) && ((offset % 2) == 0), "offset is invalid.");                           \
     unsigned insn = 0;                                                                                   \
     uint32_t val  = offset & 0x1fff;                                                                     \
     uint32_t val11 = (val >> 11) & 0x1;                                                                  \
@@ -666,8 +772,8 @@ public:
     emit(insn);                                                                                          \
   }
 
-  INSN(_beq, 0b1100011, 0b000);
-  INSN(_bne, 0b1100011, 0b001);
+  INSN(beq,  0b1100011, 0b000);
+  INSN(bne,  0b1100011, 0b001);
   INSN(bge,  0b1100011, 0b101);
   INSN(bgeu, 0b1100011, 0b111);
   INSN(blt,  0b1100011, 0b100);
@@ -675,167 +781,74 @@ public:
 
 #undef INSN
 
-#define INSN(NAME)                                                                                       \
-  void NAME(Register Rs1, Register Rs2, const address dest) {                                            \
-    assert_cond(dest != NULL);                                                                           \
-    int64_t offset = (dest - pc());                                                                      \
-    guarantee(is_imm_in_range(offset, 12, 1), "offset is invalid.");                                     \
-    NAME(Rs1, Rs2, offset);                                                                              \
-  }                                                                                                      \
-  INSN_ENTRY_RELOC(void, NAME(Register Rs1, Register Rs2, address dest, relocInfo::relocType rtype))     \
-    NAME(Rs1, Rs2, dest);                                                                                \
+ private:
+
+  enum StoreWidthFunct3 : uint8_t {
+    STORE_WIDTH_BYTE        = 0b000,
+    STORE_WIDTH_HALFWORD    = 0b001,
+    STORE_WIDTH_WORD        = 0b010,
+    STORE_WIDTH_DOUBLEWORD  = 0b011,
+    // 0b100 to 0b111 are reserved for this opcode
+  };
+
+  static constexpr uint8_t OP_STORE_MAJOR    = 0b0100011;
+  static constexpr uint8_t OP_FP_STORE_MAJOR = 0b0100111;
+
+  template <uint8_t op_code, StoreWidthFunct3 width>
+  void store_base(uint8_t Rs2, Register Rs1, const int32_t offset) {
+    guarantee(is_simm12(offset), "offset is invalid.");
+    unsigned insn = 0;
+    uint32_t val  = offset & 0xfff;
+    uint32_t low  = val & 0x1f;
+    uint32_t high = (val >> 5) & 0x7f;
+    patch((address)&insn,  6,  0, op_code);
+    patch((address)&insn, 11,  7, low);
+    patch((address)&insn, 14, 12, width);
+    patch_reg((address)&insn, 15, Rs1);
+    patch((address)&insn, 24, 20, Rs2);
+    patch((address)&insn, 31, 25, high);
+    emit(insn);
   }
 
-  INSN(beq);
-  INSN(bne);
-  INSN(bge);
-  INSN(bgeu);
-  INSN(blt);
-  INSN(bltu);
-
-#undef INSN
-
-#define INSN(NAME, NEG_INSN)                                                                \
-  void NAME(Register Rs1, Register Rs2, Label &L, bool is_far = false) {                    \
-    wrap_label(Rs1, Rs2, L, &Assembler::NAME, &Assembler::NEG_INSN, is_far);                \
+  template <StoreWidthFunct3 width>
+  void store_base(Register Rs2, Register Rs1, const int32_t offset) {
+    store_base<OP_STORE_MAJOR, width>(Rs2->raw_encoding(), Rs1, offset);
   }
 
-  INSN(beq,  bne);
-  INSN(bne,  beq);
-  INSN(blt,  bge);
-  INSN(bge,  blt);
-  INSN(bltu, bgeu);
-  INSN(bgeu, bltu);
-
-#undef INSN
-
-#define INSN(NAME, REGISTER, op, funct3)                                                                    \
-  void NAME(REGISTER Rs1, Register Rs2, const int32_t offset) {                                             \
-    guarantee(is_offset_in_range(offset, 12), "offset is invalid.");                                        \
-    unsigned insn = 0;                                                                                      \
-    uint32_t val  = offset & 0xfff;                                                                         \
-    uint32_t low  = val & 0x1f;                                                                             \
-    uint32_t high = (val >> 5) & 0x7f;                                                                      \
-    patch((address)&insn, 6, 0, op);                                                                        \
-    patch((address)&insn, 14, 12, funct3);                                                                  \
-    patch_reg((address)&insn, 15, Rs2);                                                                     \
-    patch_reg((address)&insn, 20, Rs1);                                                                     \
-    patch((address)&insn, 11, 7, low);                                                                      \
-    patch((address)&insn, 31, 25, high);                                                                    \
-    emit(insn);                                                                                             \
-  }                                                                                                         \
-
-  INSN(sb,   Register,      0b0100011, 0b000);
-  INSN(sh,   Register,      0b0100011, 0b001);
-  INSN(_sw,  Register,      0b0100011, 0b010);
-  INSN(_sd,  Register,      0b0100011, 0b011);
-  INSN(fsw,  FloatRegister, 0b0100111, 0b010);
-  INSN(_fsd, FloatRegister, 0b0100111, 0b011);
-
-#undef INSN
-
-#define INSN(NAME, REGISTER)                                                                                \
-  INSN_ENTRY_RELOC(void, NAME(REGISTER Rs, address dest, relocInfo::relocType rtype, Register temp = t0))   \
-    NAME(Rs, dest, temp);                                                                                   \
+  template <StoreWidthFunct3 width>
+  void store_base(FloatRegister Rs2, Register Rs1, const int32_t offset) {
+    store_base<OP_FP_STORE_MAJOR, width>(Rs2->raw_encoding(), Rs1, offset);
   }
 
-  INSN(sb,  Register);
-  INSN(sh,  Register);
-  INSN(sw,  Register);
-  INSN(sd,  Register);
-  INSN(fsw, FloatRegister);
-  INSN(fsd, FloatRegister);
+ public:
 
-#undef INSN
-
-#define INSN(NAME)                                                                                 \
-  void NAME(Register Rs, address dest, Register temp = t0) {                                       \
-    assert_cond(dest != NULL);                                                                     \
-    assert_different_registers(Rs, temp);                                                          \
-    int64_t distance = (dest - pc());                                                              \
-    if (is_offset_in_range(distance, 32)) {                                                        \
-      auipc(temp, (int32_t)distance + 0x800);                                                      \
-      NAME(Rs, temp, ((int32_t)distance << 20) >> 20);                                             \
-    } else {                                                                                       \
-      int32_t offset = 0;                                                                          \
-      movptr_with_offset(temp, dest, offset);                                                      \
-      NAME(Rs, temp, offset);                                                                      \
-    }                                                                                              \
-  }                                                                                                \
-  void NAME(Register Rs, const Address &adr, Register temp = t0) {                                 \
-    switch (adr.getMode()) {                                                                       \
-      case Address::literal: {                                                                     \
-        assert_different_registers(Rs, temp);                                                      \
-        code_section()->relocate(pc(), adr.rspec());                                               \
-        NAME(Rs, adr.target(), temp);                                                              \
-        break;                                                                                     \
-      }                                                                                            \
-      case Address::base_plus_offset: {                                                            \
-        if (is_offset_in_range(adr.offset(), 12)) {                                                \
-          NAME(Rs, adr.base(), adr.offset());                                                      \
-        } else {                                                                                   \
-          int32_t offset= 0;                                                                       \
-          assert_different_registers(Rs, temp);                                                    \
-          baseOffset32(temp, adr, offset);                                                         \
-          NAME(Rs, temp, offset);                                                                  \
-        }                                                                                          \
-        break;                                                                                     \
-      }                                                                                            \
-      default:                                                                                     \
-        ShouldNotReachHere();                                                                      \
-    }                                                                                              \
+  void _sb(Register Rs2, Register Rs1, const int32_t offset) {
+    store_base<STORE_WIDTH_BYTE>(Rs2, Rs1, offset);
   }
 
-  INSN(sb);
-  INSN(sh);
-  INSN(sw);
-  INSN(sd);
-
-#undef INSN
-
-#define INSN(NAME)                                                                                 \
-  void NAME(FloatRegister Rs, address dest, Register temp = t0) {                                  \
-    assert_cond(dest != NULL);                                                                     \
-    int64_t distance = (dest - pc());                                                              \
-    if (is_offset_in_range(distance, 32)) {                                                        \
-      auipc(temp, (int32_t)distance + 0x800);                                                      \
-      NAME(Rs, temp, ((int32_t)distance << 20) >> 20);                                             \
-    } else {                                                                                       \
-      int32_t offset = 0;                                                                          \
-      movptr_with_offset(temp, dest, offset);                                                      \
-      NAME(Rs, temp, offset);                                                                      \
-    }                                                                                              \
-  }                                                                                                \
-  void NAME(FloatRegister Rs, const Address &adr, Register temp = t0) {                            \
-    switch (adr.getMode()) {                                                                       \
-      case Address::literal: {                                                                     \
-        code_section()->relocate(pc(), adr.rspec());                                               \
-        NAME(Rs, adr.target(), temp);                                                              \
-        break;                                                                                     \
-      }                                                                                            \
-      case Address::base_plus_offset: {                                                            \
-        if (is_offset_in_range(adr.offset(), 12)) {                                                \
-          NAME(Rs, adr.base(), adr.offset());                                                      \
-        } else {                                                                                   \
-          int32_t offset = 0;                                                                      \
-          baseOffset32(temp, adr, offset);                                                         \
-          NAME(Rs, temp, offset);                                                                  \
-        }                                                                                          \
-        break;                                                                                     \
-      }                                                                                            \
-      default:                                                                                     \
-        ShouldNotReachHere();                                                                      \
-    }                                                                                              \
+  void _sh(Register Rs2, Register Rs1, const int32_t offset) {
+    store_base<STORE_WIDTH_HALFWORD>(Rs2, Rs1, offset);
   }
 
-  INSN(fsw);
-  INSN(fsd);
+  void _sw(Register Rs2, Register Rs1, const int32_t offset) {
+    store_base<STORE_WIDTH_WORD>(Rs2, Rs1, offset);
+  }
 
-#undef INSN
+  void _sd(Register Rs2, Register Rs1, const int32_t offset) {
+    store_base<STORE_WIDTH_DOUBLEWORD>(Rs2, Rs1, offset);
+  }
+
+  void fsw(FloatRegister Rs2, Register Rs1, const int32_t offset) {
+    store_base<STORE_WIDTH_WORD>(Rs2, Rs1, offset);
+  }
+
+  void _fsd(FloatRegister Rs2, Register Rs1, const int32_t offset) {
+    store_base<STORE_WIDTH_DOUBLEWORD>(Rs2, Rs1, offset);
+  }
 
 #define INSN(NAME, op, funct3)                                                        \
   void NAME(Register Rd, const uint32_t csr, Register Rs1) {                          \
-    guarantee(is_unsigned_imm_in_range(csr, 12, 0), "csr is invalid");                \
+    guarantee(is_uimm12(csr), "csr is invalid");                                      \
     unsigned insn = 0;                                                                \
     patch((address)&insn, 6, 0, op);                                                  \
     patch((address)&insn, 14, 12, funct3);                                            \
@@ -853,8 +866,8 @@ public:
 
 #define INSN(NAME, op, funct3)                                                        \
   void NAME(Register Rd, const uint32_t csr, const uint32_t uimm) {                   \
-    guarantee(is_unsigned_imm_in_range(csr, 12, 0), "csr is invalid");                \
-    guarantee(is_unsigned_imm_in_range(uimm, 5, 0), "uimm is invalid");               \
+    guarantee(is_uimm12(csr), "csr is invalid");                                      \
+    guarantee(is_uimm5(uimm), "uimm is invalid");                                     \
     unsigned insn = 0;                                                                \
     uint32_t val  = uimm & 0x1f;                                                      \
     patch((address)&insn, 6, 0, op);                                                  \
@@ -871,63 +884,72 @@ public:
 
 #undef INSN
 
-#define INSN(NAME, op)                                                                        \
-  void NAME(Register Rd, const int32_t offset) {                                              \
-    guarantee(is_imm_in_range(offset, 20, 1), "offset is invalid.");                          \
-    unsigned insn = 0;                                                                        \
-    patch((address)&insn, 6, 0, op);                                                          \
-    patch_reg((address)&insn, 7, Rd);                                                         \
-    patch((address)&insn, 19, 12, (uint32_t)((offset >> 12) & 0xff));                         \
-    patch((address)&insn, 20, (uint32_t)((offset >> 11) & 0x1));                              \
-    patch((address)&insn, 30, 21, (uint32_t)((offset >> 1) & 0x3ff));                         \
-    patch((address)&insn, 31, (uint32_t)((offset >> 20) & 0x1));                              \
-    emit(insn);                                                                               \
+ private:
+  // All calls and jumps must go via MASM.
+  // Format J-type
+  void _jal(Register Rd, const int32_t offset) {
+    guarantee(is_simm21(offset) && ((offset % 2) == 0), "offset is invalid.");
+    unsigned insn = 0;
+    patch((address)&insn, 6, 0, 0b1101111);
+    patch_reg((address)&insn, 7, Rd);
+    patch((address)&insn, 19, 12, (uint32_t)((offset >> 12) & 0xff));
+    patch((address)&insn, 20, (uint32_t)((offset >> 11) & 0x1));
+    patch((address)&insn, 30, 21, (uint32_t)((offset >> 1) & 0x3ff));
+    patch((address)&insn, 31, (uint32_t)((offset >> 20) & 0x1));
+    emit(insn);
   }
 
-  INSN(_jal, 0b1101111);
-
-#undef INSN
-
-#define INSN(NAME)                                                                            \
-  void NAME(Register Rd, const address dest, Register temp = t0) {                            \
-    assert_cond(dest != NULL);                                                                \
-    int64_t offset = dest - pc();                                                             \
-    if (is_imm_in_range(offset, 20, 1)) {                                                     \
-      NAME(Rd, offset);                                                                       \
-    } else {                                                                                  \
-      assert_different_registers(Rd, temp);                                                   \
-      int32_t off = 0;                                                                        \
-      movptr_with_offset(temp, dest, off);                                                    \
-      jalr(Rd, temp, off);                                                                    \
-    }                                                                                         \
-  }                                                                                           \
-  void NAME(Register Rd, Label &L, Register temp = t0) {                                      \
-    assert_different_registers(Rd, temp);                                                     \
-    wrap_label(Rd, L, temp, &Assembler::NAME);                                                \
+  // Format I-type
+  void _jalr(Register Rd, Register Rs, const int32_t offset) {
+    guarantee(is_simm12(offset), "offset is invalid.");
+    unsigned insn = 0;
+    patch((address)&insn, 6, 0, 0b1100111);
+    patch_reg((address)&insn, 7, Rd);
+    patch((address)&insn, 14, 12, 0b000);
+    patch_reg((address)&insn, 15, Rs);
+    int32_t val = offset & 0xfff;
+    patch((address)&insn, 31, 20, val);
+    emit(insn);
   }
 
-  INSN(jal);
+ public:
 
-#undef INSN
-
-#undef INSN_ENTRY_RELOC
-
-#define INSN(NAME, op, funct)                                                              \
-  void NAME(Register Rd, Register Rs, const int32_t offset) {                              \
-    guarantee(is_offset_in_range(offset, 12), "offset is invalid.");                       \
-    unsigned insn = 0;                                                                     \
-    patch((address)&insn, 6, 0, op);                                                       \
-    patch_reg((address)&insn, 7, Rd);                                                      \
-    patch((address)&insn, 14, 12, funct);                                                  \
-    patch_reg((address)&insn, 15, Rs);                                                     \
-    int32_t val = offset & 0xfff;                                                          \
-    patch((address)&insn, 31, 20, val);                                                    \
-    emit(insn);                                                                            \
+  static uint32_t encode_csrrw(Register Rd, const uint32_t csr, Register Rs1) {
+    guarantee(is_uimm12(csr), "csr is invalid");
+    uint32_t insn = 0;
+    patch((address)&insn, 6, 0, 0b1110011);
+    patch((address)&insn, 14, 12, 0b001);
+    patch_reg((address)&insn, 7, Rd);
+    patch_reg((address)&insn, 15, Rs1);
+    patch((address)&insn, 31, 20, csr);
+    return insn;
   }
 
-  INSN(_jalr, 0b1100111, 0b000);
+  static uint32_t encode_jal(Register Rd, const int32_t offset) {
+    guarantee(is_simm21(offset) && ((offset % 2) == 0), "offset is invalid.");
+    uint32_t insn = 0;
+    patch((address)&insn, 6, 0, 0b1101111);
+    patch_reg((address)&insn, 7, Rd);
+    patch((address)&insn, 19, 12, (uint32_t)((offset >> 12) & 0xff));
+    patch((address)&insn, 20, (uint32_t)((offset >> 11) & 0x1));
+    patch((address)&insn, 30, 21, (uint32_t)((offset >> 1) & 0x3ff));
+    patch((address)&insn, 31, (uint32_t)((offset >> 20) & 0x1));
+    return insn;
+  }
 
-#undef INSN
+  static uint32_t encode_jalr(Register Rd, Register Rs, const int32_t offset) {
+    guarantee(is_simm12(offset), "offset is invalid.");
+    uint32_t insn = 0;
+    patch((address)&insn, 6, 0, 0b1100111);
+    patch_reg((address)&insn, 7, Rd);
+    patch((address)&insn, 14, 12, 0b000);
+    patch_reg((address)&insn, 15, Rs);
+    int32_t val = offset & 0xfff;
+    patch((address)&insn, 31, 20, val);
+    return insn;
+  }
+
+ protected:
 
   enum barrier {
     i = 0b1000, o = 0b0100, r = 0b0010, w = 0b0001,
@@ -938,15 +960,27 @@ public:
     unsigned insn = 0;
     guarantee(predecessor < 16, "predecessor is invalid");
     guarantee(successor < 16, "successor is invalid");
-    patch((address)&insn, 6, 0, 0b001111);
-    patch((address)&insn, 11, 7, 0b00000);
+    patch((address)&insn, 6, 0, 0b001111);      // opcode
+    patch((address)&insn, 11, 7, 0b00000);      // rd
     patch((address)&insn, 14, 12, 0b000);
-    patch((address)&insn, 19, 15, 0b00000);
-    patch((address)&insn, 23, 20, successor);
-    patch((address)&insn, 27, 24, predecessor);
-    patch((address)&insn, 31, 28, 0b0000);
+    patch((address)&insn, 19, 15, 0b00000);     // rs1
+    patch((address)&insn, 23, 20, successor);   // succ
+    patch((address)&insn, 27, 24, predecessor); // pred
+    patch((address)&insn, 31, 28, 0b0000);      // fm
     emit(insn);
   }
+
+  void fencei() {
+    unsigned insn = 0;
+    patch((address)&insn,  6,  0, 0b0001111);      // opcode
+    patch((address)&insn, 11,  7, 0b00000);        // rd
+    patch((address)&insn, 14, 12, 0b001);          // func
+    patch((address)&insn, 19, 15, 0b00000);        // rs1
+    patch((address)&insn, 31, 20, 0b000000000000); // fm
+    emit(insn);
+  }
+
+ public:
 
 #define INSN(NAME, op, funct3, funct7)                      \
   void NAME() {                                             \
@@ -959,108 +993,249 @@ public:
     emit(insn);                                             \
   }
 
-  INSN(fence_i, 0b0001111, 0b001, 0b000000000000);
   INSN(ecall,   0b1110011, 0b000, 0b000000000000);
   INSN(_ebreak, 0b1110011, 0b000, 0b000000000001);
 
 #undef INSN
 
-enum Aqrl {relaxed = 0b00, rl = 0b01, aq = 0b10, aqrl = 0b11};
+  enum Aqrl {relaxed = 0b00, rl = 0b01, aq = 0b10, aqrl = 0b11};
 
-#define INSN(NAME, op, funct3, funct7)                                                  \
-  void NAME(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {        \
-    unsigned insn = 0;                                                                  \
-    patch((address)&insn, 6, 0, op);                                                    \
-    patch((address)&insn, 14, 12, funct3);                                              \
-    patch_reg((address)&insn, 7, Rd);                                                   \
-    patch_reg((address)&insn, 15, Rs1);                                                 \
-    patch_reg((address)&insn, 20, Rs2);                                                 \
-    patch((address)&insn, 31, 27, funct7);                                              \
-    patch((address)&insn, 26, 25, memory_order);                                        \
-    emit(insn);                                                                         \
+ private:
+
+  enum AmoWidthFunct3 : uint8_t {
+    AMO_WIDTH_BYTE        = 0b000, // Zabha extension
+    AMO_WIDTH_HALFWORD    = 0b001, // Zabha extension
+    AMO_WIDTH_WORD        = 0b010,
+    AMO_WIDTH_DOUBLEWORD  = 0b011,
+    AMO_WIDTH_QUADWORD    = 0b100,
+    // 0b101 to 0b111 are reserved
+  };
+
+  enum AmoOperationFunct5 : uint8_t {
+    AMO_ADD  = 0b00000,
+    AMO_SWAP = 0b00001,
+    AMO_LR   = 0b00010,
+    AMO_SC   = 0b00011,
+    AMO_XOR  = 0b00100,
+    AMO_OR   = 0b01000,
+    AMO_AND  = 0b01100,
+    AMO_MIN  = 0b10000,
+    AMO_MAX  = 0b10100,
+    AMO_MINU = 0b11000,
+    AMO_MAXU = 0b11100,
+    AMO_CAS  = 0b00101 // Zacas
+  };
+
+  static constexpr uint32_t OP_AMO_MAJOR = 0b0101111;
+
+  template <AmoOperationFunct5 funct5, AmoWidthFunct3 width>
+  void amo_base(Register Rd, Register Rs1, uint8_t Rs2, Aqrl memory_order = aqrl) {
+    assert(width > AMO_WIDTH_HALFWORD || UseZabha, "Must be");
+    assert(funct5 != AMO_CAS || UseZacas, "Must be");
+    unsigned insn = 0;
+    patch((address)&insn,  6,  0, OP_AMO_MAJOR);
+    patch_reg((address)&insn,  7, Rd);
+    patch((address)&insn, 14, 12, width);
+    patch_reg((address)&insn, 15, Rs1);
+    patch((address)&insn, 24, 20, Rs2);
+    patch((address)&insn, 26, 25, memory_order);
+    patch((address)&insn, 31, 27, funct5);
+    emit(insn);
   }
 
-  INSN(amoswap_w, 0b0101111, 0b010, 0b00001);
-  INSN(amoadd_w,  0b0101111, 0b010, 0b00000);
-  INSN(amoxor_w,  0b0101111, 0b010, 0b00100);
-  INSN(amoand_w,  0b0101111, 0b010, 0b01100);
-  INSN(amoor_w,   0b0101111, 0b010, 0b01000);
-  INSN(amomin_w,  0b0101111, 0b010, 0b10000);
-  INSN(amomax_w,  0b0101111, 0b010, 0b10100);
-  INSN(amominu_w, 0b0101111, 0b010, 0b11000);
-  INSN(amomaxu_w, 0b0101111, 0b010, 0b11100);
-  INSN(amoswap_d, 0b0101111, 0b011, 0b00001);
-  INSN(amoadd_d,  0b0101111, 0b011, 0b00000);
-  INSN(amoxor_d,  0b0101111, 0b011, 0b00100);
-  INSN(amoand_d,  0b0101111, 0b011, 0b01100);
-  INSN(amoor_d,   0b0101111, 0b011, 0b01000);
-  INSN(amomin_d,  0b0101111, 0b011, 0b10000);
-  INSN(amomax_d , 0b0101111, 0b011, 0b10100);
-  INSN(amominu_d, 0b0101111, 0b011, 0b11000);
-  INSN(amomaxu_d, 0b0101111, 0b011, 0b11100);
-#undef INSN
-
-enum operand_size { int8, int16, int32, uint32, int64 };
-
-#define INSN(NAME, op, funct3, funct7)                                              \
-  void NAME(Register Rd, Register Rs1, Aqrl memory_order = relaxed) {               \
-    unsigned insn = 0;                                                              \
-    uint32_t val = memory_order & 0x3;                                              \
-    patch((address)&insn, 6, 0, op);                                                \
-    patch((address)&insn, 14, 12, funct3);                                          \
-    patch_reg((address)&insn, 7, Rd);                                               \
-    patch_reg((address)&insn, 15, Rs1);                                             \
-    patch((address)&insn, 25, 20, 0b00000);                                         \
-    patch((address)&insn, 31, 27, funct7);                                          \
-    patch((address)&insn, 26, 25, val);                                             \
-    emit(insn);                                                                     \
+  template <AmoOperationFunct5 funct5, AmoWidthFunct3 width>
+  void amo_base(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<funct5, width>(Rd, Rs1, Rs2->raw_encoding(), memory_order);
   }
 
-  INSN(lr_w, 0b0101111, 0b010, 0b00010);
-  INSN(lr_d, 0b0101111, 0b011, 0b00010);
+ public:
 
-#undef INSN
-
-#define INSN(NAME, op, funct3, funct7)                                                      \
-  void NAME(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = relaxed) {         \
-    unsigned insn = 0;                                                                      \
-    uint32_t val = memory_order & 0x3;                                                      \
-    patch((address)&insn, 6, 0, op);                                                        \
-    patch((address)&insn, 14, 12, funct3);                                                  \
-    patch_reg((address)&insn, 7, Rd);                                                       \
-    patch_reg((address)&insn, 15, Rs2);                                                     \
-    patch_reg((address)&insn, 20, Rs1);                                                     \
-    patch((address)&insn, 31, 27, funct7);                                                  \
-    patch((address)&insn, 26, 25, val);                                                     \
-    emit(insn);                                                                             \
+  void amoadd_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_ADD, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
   }
 
-  INSN(sc_w, 0b0101111, 0b010, 0b00011);
-  INSN(sc_d, 0b0101111, 0b011, 0b00011);
-#undef INSN
-
-#define INSN(NAME, op, funct5, funct7)                                                      \
-  void NAME(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {                   \
-    unsigned insn = 0;                                                                      \
-    patch((address)&insn, 6, 0, op);                                                        \
-    patch((address)&insn, 14, 12, rm);                                                      \
-    patch((address)&insn, 24, 20, funct5);                                                  \
-    patch((address)&insn, 31, 25, funct7);                                                  \
-    patch_reg((address)&insn, 7, Rd);                                                       \
-    patch_reg((address)&insn, 15, Rs1);                                                     \
-    emit(insn);                                                                             \
+  void amoadd_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_ADD, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
   }
 
-  INSN(fsqrt_s,   0b1010011, 0b00000, 0b0101100);
-  INSN(fsqrt_d,   0b1010011, 0b00000, 0b0101101);
-  INSN(fcvt_s_d,  0b1010011, 0b00001, 0b0100000);
-  INSN(fcvt_d_s,  0b1010011, 0b00000, 0b0100001);
-#undef INSN
+  void amoadd_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_ADD, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoadd_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_ADD, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoswap_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_SWAP, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoswap_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_SWAP, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoswap_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_SWAP, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoswap_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_SWAP, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoxor_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_XOR, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoxor_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_XOR, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoxor_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_XOR, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoxor_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_XOR, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoor_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_OR, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoor_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_OR, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoor_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_OR, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoor_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_OR, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoand_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_AND, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoand_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_AND, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoand_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_AND, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amoand_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_AND, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomin_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MIN, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomin_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MIN, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomin_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MIN, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomin_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MIN, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amominu_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MINU, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amominu_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MINU, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amominu_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MINU, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amominu_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MINU, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomax_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAX, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomax_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAX, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomax_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAX, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomax_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAX, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomaxu_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAXU, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomaxu_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAXU, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomaxu_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAXU, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amomaxu_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_MAXU, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+ protected:
+
+  void lr_w(Register Rd, Register Rs1, Aqrl memory_order = aqrl) {
+    amo_base<AMO_LR, AMO_WIDTH_WORD>(Rd, Rs1, 0, memory_order);
+  }
+
+  void lr_d(Register Rd, Register Rs1, Aqrl memory_order = aqrl) {
+    amo_base<AMO_LR, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, 0, memory_order);
+  }
+
+  void sc_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_SC, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void sc_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_SC, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amocas_b(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_CAS, AMO_WIDTH_BYTE>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amocas_h(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_CAS, AMO_WIDTH_HALFWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amocas_w(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_CAS, AMO_WIDTH_WORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+  void amocas_d(Register Rd, Register Rs1, Register Rs2, Aqrl memory_order = aqrl) {
+    amo_base<AMO_CAS, AMO_WIDTH_DOUBLEWORD>(Rd, Rs1, Rs2, memory_order);
+  }
+
+ public:
+
+  enum operand_size { int8, int16, int32, uint32, int64 };
 
 // Immediate Instruction
 #define INSN(NAME, op, funct3)                                                              \
-  void NAME(Register Rd, Register Rs1, int32_t imm) {                                       \
-    guarantee(is_imm_in_range(imm, 12, 0), "Immediate is out of validity");                 \
+  void NAME(Register Rd, Register Rs1, int64_t imm) {                                       \
+    guarantee(is_simm12(imm), "Immediate is out of validity");                              \
     unsigned insn = 0;                                                                      \
     patch((address)&insn, 6, 0, op);                                                        \
     patch((address)&insn, 14, 12, funct3);                                                  \
@@ -1070,18 +1245,18 @@ enum operand_size { int8, int16, int32, uint32, int64 };
     emit(insn);                                                                             \
   }
 
-  INSN(_addi,      0b0010011, 0b000);
-  INSN(slti,       0b0010011, 0b010);
-  INSN(_addiw,     0b0011011, 0b000);
-  INSN(_and_imm12, 0b0010011, 0b111);
-  INSN(ori,        0b0010011, 0b110);
-  INSN(xori,       0b0010011, 0b100);
+  INSN(_addi,  0b0010011, 0b000);
+  INSN(_addiw, 0b0011011, 0b000);
+  INSN(_andi,  0b0010011, 0b111);
+  INSN(ori,    0b0010011, 0b110);
+  INSN(xori,   0b0010011, 0b100);
+  INSN(slti,   0b0010011, 0b010);
 
 #undef INSN
 
 #define INSN(NAME, op, funct3)                                                              \
-  void NAME(Register Rd, Register Rs1, uint32_t imm) {                                      \
-    guarantee(is_unsigned_imm_in_range(imm, 12, 0), "Immediate is out of validity");        \
+  void NAME(Register Rd, Register Rs1, uint64_t imm) {                                      \
+    guarantee(is_uimm12(imm), "Immediate is out of validity");                              \
     unsigned insn = 0;                                                                      \
     patch((address)&insn,6, 0,  op);                                                        \
     patch((address)&insn, 14, 12, funct3);                                                  \
@@ -1152,187 +1327,480 @@ enum operand_size { int8, int16, int32, uint32, int64 };
 
 #undef INSN
 
-// Float and Double Rigster Instruction
-#define INSN(NAME, op, funct2)                                                                                     \
-  void NAME(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne) {    \
-    unsigned insn = 0;                                                                                             \
-    patch((address)&insn, 6, 0, op);                                                                               \
-    patch((address)&insn, 14, 12, rm);                                                                             \
-    patch((address)&insn, 26, 25, funct2);                                                                         \
-    patch_reg((address)&insn, 7, Rd);                                                                              \
-    patch_reg((address)&insn, 15, Rs1);                                                                            \
-    patch_reg((address)&insn, 20, Rs2);                                                                            \
-    patch_reg((address)&insn, 27, Rs3);                                                                            \
-    emit(insn);                                                                                                    \
+// ==========================
+// Floating Point Instructions
+// ==========================
+  static constexpr uint32_t OP_FP_MAJOR = 0b1010011;
+
+  enum FmtPrecision : uint8_t {
+    S_32_sp  = 0b00,
+    D_64_dp  = 0b01,
+    H_16_hp  = 0b10,
+    Q_128_qp = 0b11
+  };
+
+ private:
+
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(uint8_t Rd, uint8_t Rs1, uint8_t Rs2, RoundingMode rm) {
+    assert(Fmt != H_16_hp || UseZfh || UseZfhmin, "No half precision enabled");
+    assert_cond(Fmt != Q_128_qp);
+    guarantee(is_uimm3(rm), "Rounding mode is out of validity");
+    guarantee(is_uimm2(Fmt), "FMT is out of validity");
+    guarantee(is_uimm5(funct5), "Funct5 is out of validity");
+    uint32_t insn = 0;
+    patch((address)&insn,   6, 0, OP_FP_MAJOR);
+    patch((address)&insn, 11,  7, Rd);
+    patch((address)&insn, 14, 12, rm);
+    patch((address)&insn, 19, 15, Rs1);
+    patch((address)&insn, 24, 20, Rs2);
+    patch((address)&insn, 26, 25, Fmt);
+    patch((address)&insn, 31, 27, funct5);
+    emit(insn);
   }
 
-  INSN(fmadd_s,   0b1000011,  0b00);
-  INSN(fmsub_s,   0b1000111,  0b00);
-  INSN(fnmsub_s,  0b1001011,  0b00);
-  INSN(fnmadd_s,  0b1001111,  0b00);
-  INSN(fmadd_d,   0b1000011,  0b01);
-  INSN(fmsub_d,   0b1000111,  0b01);
-  INSN(fnmsub_d,  0b1001011,  0b01);
-  INSN(fnmadd_d,  0b1001111,  0b01);
-
-#undef INSN
-
-// Float and Double Rigster Instruction
-#define INSN(NAME, op, funct3, funct7)                                        \
-  void NAME(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {         \
-    unsigned insn = 0;                                                        \
-    patch((address)&insn, 6, 0, op);                                          \
-    patch((address)&insn, 14, 12, funct3);                                    \
-    patch((address)&insn, 31, 25, funct7);                                    \
-    patch_reg((address)&insn, 7, Rd);                                         \
-    patch_reg((address)&insn, 15, Rs1);                                       \
-    patch_reg((address)&insn, 20, Rs2);                                       \
-    emit(insn);                                                               \
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm) {
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2->raw_encoding(), rm);
   }
 
-  INSN(fsgnj_s,  0b1010011, 0b000, 0b0010000);
-  INSN(fsgnjn_s, 0b1010011, 0b001, 0b0010000);
-  INSN(fsgnjx_s, 0b1010011, 0b010, 0b0010000);
-  INSN(fmin_s,   0b1010011, 0b000, 0b0010100);
-  INSN(fmax_s,   0b1010011, 0b001, 0b0010100);
-  INSN(fsgnj_d,  0b1010011, 0b000, 0b0010001);
-  INSN(fsgnjn_d, 0b1010011, 0b001, 0b0010001);
-  INSN(fsgnjx_d, 0b1010011, 0b010, 0b0010001);
-  INSN(fmin_d,   0b1010011, 0b000, 0b0010101);
-  INSN(fmax_d,   0b1010011, 0b001, 0b0010101);
-
-#undef INSN
-
-// Float and Double Rigster Arith Instruction
-#define INSN(NAME, op, funct3, funct7)                                    \
-  void NAME(Register Rd, FloatRegister Rs1, FloatRegister Rs2) {          \
-    unsigned insn = 0;                                                    \
-    patch((address)&insn, 6, 0, op);                                      \
-    patch((address)&insn, 14, 12, funct3);                                \
-    patch((address)&insn, 31, 25, funct7);                                \
-    patch_reg((address)&insn, 7, Rd);                                     \
-    patch_reg((address)&insn, 15, Rs1);                                   \
-    patch_reg((address)&insn, 20, Rs2);                                   \
-    emit(insn);                                                           \
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, int8_t rm) {
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2->raw_encoding(), (RoundingMode)rm);
   }
 
-  INSN(feq_s,    0b1010011, 0b010, 0b1010000);
-  INSN(flt_s,    0b1010011, 0b001, 0b1010000);
-  INSN(fle_s,    0b1010011, 0b000, 0b1010000);
-  INSN(feq_d,    0b1010011, 0b010, 0b1010001);
-  INSN(fle_d,    0b1010011, 0b000, 0b1010001);
-  INSN(flt_d,    0b1010011, 0b001, 0b1010001);
-#undef INSN
-
-// Float and Double Arith Instruction
-#define INSN(NAME, op, funct7)                                                                  \
-  void NAME(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {    \
-    unsigned insn = 0;                                                                          \
-    patch((address)&insn, 6, 0, op);                                                            \
-    patch((address)&insn, 14, 12, rm);                                                          \
-    patch((address)&insn, 31, 25, funct7);                                                      \
-    patch_reg((address)&insn, 7, Rd);                                                           \
-    patch_reg((address)&insn, 15, Rs1);                                                         \
-    patch_reg((address)&insn, 20, Rs2);                                                         \
-    emit(insn);                                                                                 \
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(Register Rd, FloatRegister Rs1, FloatRegister Rs2, int8_t rm) {
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2->raw_encoding(), (RoundingMode)rm);
   }
 
-  INSN(fadd_s,   0b1010011, 0b0000000);
-  INSN(fsub_s,   0b1010011, 0b0000100);
-  INSN(fmul_s,   0b1010011, 0b0001000);
-  INSN(fdiv_s,   0b1010011, 0b0001100);
-  INSN(fadd_d,   0b1010011, 0b0000001);
-  INSN(fsub_d,   0b1010011, 0b0000101);
-  INSN(fmul_d,   0b1010011, 0b0001001);
-  INSN(fdiv_d,   0b1010011, 0b0001101);
-
-#undef INSN
-
-// Whole Float and Double Conversion Instruction
-#define INSN(NAME, op, funct5, funct7)                                  \
-  void NAME(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {    \
-    unsigned insn = 0;                                                  \
-    patch((address)&insn, 6, 0, op);                                    \
-    patch((address)&insn, 14, 12, rm);                                  \
-    patch((address)&insn, 24, 20, funct5);                              \
-    patch((address)&insn, 31, 25, funct7);                              \
-    patch_reg((address)&insn, 7, Rd);                                   \
-    patch_reg((address)&insn, 15, Rs1);                                 \
-    emit(insn);                                                         \
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(FloatRegister Rd, FloatRegister Rs1, int8_t Rs2, int8_t rm) {
+    guarantee(is_uimm5(Rs2), "Rs2 is out of validity");
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2, (RoundingMode)rm);
   }
 
-  INSN(fcvt_s_w,   0b1010011, 0b00000, 0b1101000);
-  INSN(fcvt_s_wu,  0b1010011, 0b00001, 0b1101000);
-  INSN(fcvt_s_l,   0b1010011, 0b00010, 0b1101000);
-  INSN(fcvt_s_lu,  0b1010011, 0b00011, 0b1101000);
-  INSN(fcvt_d_w,   0b1010011, 0b00000, 0b1101001);
-  INSN(fcvt_d_wu,  0b1010011, 0b00001, 0b1101001);
-  INSN(fcvt_d_l,   0b1010011, 0b00010, 0b1101001);
-  INSN(fcvt_d_lu,  0b1010011, 0b00011, 0b1101001);
-
-#undef INSN
-
-// Float and Double Conversion Instruction
-#define INSN(NAME, op, funct5, funct7)                                  \
-  void NAME(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {    \
-    unsigned insn = 0;                                                  \
-    patch((address)&insn, 6, 0, op);                                    \
-    patch((address)&insn, 14, 12, rm);                                  \
-    patch((address)&insn, 24, 20, funct5);                              \
-    patch((address)&insn, 31, 25, funct7);                              \
-    patch_reg((address)&insn, 7, Rd);                                   \
-    patch_reg((address)&insn, 15, Rs1);                                 \
-    emit(insn);                                                         \
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(FloatRegister Rd, Register Rs1, FloatRegister Rs2, RoundingMode rm) {
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2->raw_encoding(), rm);
   }
 
-  INSN(fcvt_w_s,   0b1010011, 0b00000, 0b1100000);
-  INSN(fcvt_l_s,   0b1010011, 0b00010, 0b1100000);
-  INSN(fcvt_wu_s,  0b1010011, 0b00001, 0b1100000);
-  INSN(fcvt_lu_s,  0b1010011, 0b00011, 0b1100000);
-  INSN(fcvt_w_d,   0b1010011, 0b00000, 0b1100001);
-  INSN(fcvt_wu_d,  0b1010011, 0b00001, 0b1100001);
-  INSN(fcvt_l_d,   0b1010011, 0b00010, 0b1100001);
-  INSN(fcvt_lu_d,  0b1010011, 0b00011, 0b1100001);
-
-#undef INSN
-
-// Float and Double Move Instruction
-#define INSN(NAME, op, funct3, funct5, funct7)       \
-  void NAME(FloatRegister Rd, Register Rs1) {        \
-    unsigned insn = 0;                               \
-    patch((address)&insn, 6, 0, op);                 \
-    patch((address)&insn, 14, 12, funct3);           \
-    patch((address)&insn, 20, funct5);               \
-    patch((address)&insn, 31, 25, funct7);           \
-    patch_reg((address)&insn, 7, Rd);                \
-    patch_reg((address)&insn, 15, Rs1);              \
-    emit(insn);                                      \
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(Register Rd, FloatRegister Rs1, uint8_t Rs2, RoundingMode rm) {
+    guarantee(is_uimm5(Rs2), "Rs2 is out of validity");
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2, rm);
   }
 
-  INSN(fmv_w_x,  0b1010011, 0b000, 0b00000, 0b1111000);
-  INSN(fmv_d_x,  0b1010011, 0b000, 0b00000, 0b1111001);
-
-#undef INSN
-
-// Float and Double Conversion Instruction
-#define INSN(NAME, op, funct3, funct5, funct7)            \
-  void NAME(Register Rd, FloatRegister Rs1) {             \
-    unsigned insn = 0;                                    \
-    patch((address)&insn, 6, 0, op);                      \
-    patch((address)&insn, 14, 12, funct3);                \
-    patch((address)&insn, 20, funct5);                    \
-    patch((address)&insn, 31, 25, funct7);                \
-    patch_reg((address)&insn, 7, Rd);                     \
-    patch_reg((address)&insn, 15, Rs1);                   \
-    emit(insn);                                           \
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(Register Rd, FloatRegister Rs1, uint8_t Rs2, uint8_t rm) {
+    guarantee(is_uimm5(Rs2), "Rs2 is out of validity");
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2, (RoundingMode)rm);
   }
 
-  INSN(fclass_s, 0b1010011, 0b001, 0b00000, 0b1110000);
-  INSN(fclass_d, 0b1010011, 0b001, 0b00000, 0b1110001);
-  INSN(fmv_x_w,  0b1010011, 0b000, 0b00000, 0b1110000);
-  INSN(fmv_x_d,  0b1010011, 0b000, 0b00000, 0b1110001);
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(FloatRegister Rd, Register Rs1, uint8_t Rs2, RoundingMode rm) {
+    guarantee(is_uimm5(Rs2), "Rs2 is out of validity");
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2, rm);
+  }
 
-#undef INSN
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(FloatRegister Rd, Register Rs1, uint8_t Rs2, int8_t rm) {
+    guarantee(is_uimm5(Rs2), "Rs2 is out of validity");
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1->raw_encoding(), Rs2, (RoundingMode)rm);
+  }
+
+  template <FmtPrecision Fmt, uint8_t funct5>
+  void fp_base(FloatRegister Rd, uint8_t Rs1, uint8_t Rs2, int8_t rm) {
+    guarantee(is_uimm5(Rs1), "Rs1 is out of validity");
+    guarantee(is_uimm5(Rs2), "Rs2 is out of validity");
+    fp_base<Fmt, funct5>(Rd->raw_encoding(), Rs1, Rs2, (RoundingMode)rm);
+  }
+
+ public:
+
+  enum FClassBits {
+    minf       = 1 << 0,   // negative infinite
+    mnorm      = 1 << 1,   // negative normal number
+    msubnorm   = 1 << 2,   // negative subnormal number
+    mzero      = 1 << 3,   // negative zero
+    pzero      = 1 << 4,   // positive zero
+    psubnorm   = 1 << 5,   // positive subnormal number
+    pnorm      = 1 << 6,   // positive normal number
+    pinf       = 1 << 7,   // positive infinite
+    snan       = 1 << 8,   // signaling NaN
+    qnan       = 1 << 9,   // quiet NaN
+    zero       = mzero    | pzero,
+    subnorm    = msubnorm | psubnorm,
+    norm       = mnorm    | pnorm,
+    inf        = minf     | pinf,
+    nan        = snan     | qnan,
+    finite     = zero     | subnorm   | norm,
+  };
+
+  void fsqrt_s(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b01011>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fsqrt_d(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b01011>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fcvt_s_d(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b01000>(Rd, Rs1, 0b00001, rm);
+  }
+
+  void fcvt_d_s(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b01000>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fsgnj_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b00100>(Rd, Rs1, Rs2, 0b000);
+  }
+
+  void fsgnjn_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b00100>(Rd, Rs1, Rs2, 0b001);
+  }
+
+  void fsgnjx_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b00100>(Rd, Rs1, Rs2, 0b010);
+  }
+
+  void fmin_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b00101>(Rd, Rs1, Rs2, 0b000);
+  }
+
+  void fmax_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b00101>(Rd, Rs1, Rs2, 0b001);
+  }
+
+  void fsgnj_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b00100>(Rd, Rs1, Rs2, 0b000);
+  }
+
+  void fsgnjn_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b00100>(Rd, Rs1, Rs2, 0b001);
+  }
+
+  void fsgnjx_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b00100>(Rd, Rs1, Rs2, 0b010);
+  }
+
+  void fmin_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b00101>(Rd, Rs1, Rs2, 0b000);
+  }
+
+  void fmax_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b00101>(Rd, Rs1, Rs2, 0b001);
+  }
+
+  void feq_s(Register Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b10100>(Rd, Rs1, Rs2, 0b010);
+  }
+
+  void flt_s(Register Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b10100>(Rd, Rs1, Rs2, 0b001);
+  }
+
+  void fle_s(Register Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<S_32_sp, 0b10100>(Rd, Rs1, Rs2, 0b000);
+  }
+
+  void feq_d(Register Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b10100>(Rd, Rs1, Rs2, 0b010);
+  }
+
+  void fle_d(Register Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b10100>(Rd, Rs1, Rs2, 0b000);
+  }
+
+  void flt_d(Register Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    fp_base<D_64_dp, 0b10100>(Rd, Rs1, Rs2, 0b001);
+  }
+
+  void fadd_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b00000>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fsub_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b00001>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fmul_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b00010>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fdiv_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b00011>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fadd_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b00000>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fsub_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b00001>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fmul_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b00010>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fdiv_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b00011>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fcvt_s_w(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b11010>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fcvt_s_wu(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b11010>(Rd, Rs1, 0b00001, rm);
+  }
+
+  void fcvt_s_l(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b11010>(Rd, Rs1, 0b00010, rm);
+  }
+
+  void fcvt_s_lu(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<S_32_sp, 0b11010>(Rd, Rs1, 0b00011, rm);
+  }
+
+  void fcvt_d_w(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b11010>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fcvt_d_wu(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b11010>(Rd, Rs1, 0b00001, rm);
+  }
+
+  void fcvt_d_l(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b11010>(Rd, Rs1, 0b00010, rm);
+  }
+
+  void fcvt_d_lu(FloatRegister Rd, Register Rs1, RoundingMode rm = rne) {
+    fp_base<D_64_dp, 0b11010>(Rd, Rs1, 0b00011, rm);
+  }
+
+  void fcvt_w_s(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<S_32_sp, 0b11000>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fcvt_l_s(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<S_32_sp, 0b11000>(Rd, Rs1, 0b00010, rm);
+  }
+
+  void fcvt_wu_s(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<S_32_sp, 0b11000>(Rd, Rs1, 0b00001, rm);
+  }
+
+  void fcvt_lu_s(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<S_32_sp, 0b11000>(Rd, Rs1, 0b00011, rm);
+  }
+
+  void fcvt_w_d(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<D_64_dp, 0b11000>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fcvt_wu_d(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<D_64_dp, 0b11000>(Rd, Rs1, 0b00001, rm);
+  }
+
+  void fcvt_l_d(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<D_64_dp, 0b11000>(Rd, Rs1, 0b00010, rm);
+  }
+
+  void fcvt_lu_d(Register Rd, FloatRegister Rs1, RoundingMode rm = rtz) {
+    fp_base<D_64_dp, 0b11000>(Rd, Rs1, 0b00011, rm);
+  }
+
+  void fmv_w_x(FloatRegister Rd, Register Rs1) {
+    fp_base<S_32_sp, 0b11110>(Rd, Rs1, 0b00000, 0b000);
+  }
+
+  void fmv_d_x(FloatRegister Rd, Register Rs1) {
+    fp_base<D_64_dp, 0b11110>(Rd, Rs1, 0b00000, 0b000);
+  }
+
+  void fclass_s(Register Rd, FloatRegister Rs1) {
+    fp_base<S_32_sp, 0b11100>(Rd, Rs1, 0b00000, 0b001);
+  }
+
+  void fclass_d(Register Rd, FloatRegister Rs1) {
+    fp_base<D_64_dp, 0b11100>(Rd, Rs1, 0b00000, 0b001);
+  }
+
+  void fmv_x_w(Register Rd, FloatRegister Rs1) {
+    fp_base<S_32_sp, 0b11100>(Rd, Rs1, 0b00000, 0b000);
+  }
+
+  void fmv_x_d(Register Rd, FloatRegister Rs1) {
+    fp_base<D_64_dp, 0b11100>(Rd, Rs1, 0b00000, 0b000);
+  }
+
+ private:
+  template <FmtPrecision Fmt, uint8_t OpVal>
+  void fp_fm(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm) {
+    assert_cond(Fmt != Q_128_qp);
+    guarantee(is_uimm3(rm), "Rounding mode is out of validity");
+    guarantee(is_uimm2(Fmt), "FMT is out of validity");
+    unsigned insn = 0;
+    patch((address)&insn,   6, 0, OpVal);
+    patch_reg((address)&insn,  7, Rd);
+    patch((address)&insn, 14, 12, rm);
+    patch_reg((address)&insn, 15, Rs1);
+    patch_reg((address)&insn, 20, Rs2);
+    patch((address)&insn, 26, 25, Fmt);
+    patch_reg((address)&insn, 27, Rs3);
+    emit(insn);
+  }
+
+ public:
+  void fmadd_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne)  {
+    fp_fm<S_32_sp, 0b1000011>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+  void fmsub_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne)  {
+    fp_fm<S_32_sp, 0b1000111>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+  void fnmsub_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne) {
+    fp_fm<S_32_sp, 0b1001011>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+  void fnmadd_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne) {
+    fp_fm<S_32_sp, 0b1001111>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+  void fmadd_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne)  {
+    fp_fm<D_64_dp, 0b1000011>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+  void fmsub_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne)  {
+    fp_fm<D_64_dp, 0b1000111>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+  void fnmsub_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne) {
+    fp_fm<D_64_dp, 0b1001011>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+  void fnmadd_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne) {
+    fp_fm<D_64_dp, 0b1001111>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+// --------------  ZFH Instruction Definitions  --------------
+// Zfh Standard Extensions for Half-Precision Floating-Point
+  void fclass_h(Register Rd, FloatRegister Rs1) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b11100>(Rd, Rs1, 0b00000, 0b001);
+  }
+
+// Zfh and Zfhmin Half-Precision Floating-Point
+  void fcvt_s_h(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {
+    assert_cond(UseZfh || UseZfhmin);
+    fp_base<S_32_sp, 0b01000>(Rd, Rs1, 0b00010, rm);
+  }
+
+  void fcvt_h_s(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {
+    assert_cond(UseZfh || UseZfhmin);
+    fp_base<H_16_hp, 0b01000>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fmv_h_x(FloatRegister Rd, Register Rs1) {
+    assert_cond(UseZfh || UseZfhmin);
+    fp_base<H_16_hp, 0b11110>(Rd, Rs1, 0b00000, 0b000);
+  }
+
+  void fmv_x_h(Register Rd, FloatRegister Rs1) {
+    assert_cond(UseZfh || UseZfhmin);
+    fp_base<H_16_hp, 0b11100>(Rd, Rs1, 0b00000, 0b000);
+  }
+
+  void fadd_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b00000>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fsub_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b00001>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fmul_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b00010>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fdiv_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, RoundingMode rm = rne) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b00011>(Rd, Rs1, Rs2, rm);
+  }
+
+  void fsqrt_h(FloatRegister Rd, FloatRegister Rs1, RoundingMode rm = rne) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b01011>(Rd, Rs1, 0b00000, rm);
+  }
+
+  void fmin_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b00101>(Rd, Rs1, Rs2, 0b000);
+  }
+
+  void fmax_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfh);
+    fp_base<H_16_hp, 0b00101>(Rd, Rs1, Rs2, 0b001);
+  }
+
+  void fmadd_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2, FloatRegister Rs3, RoundingMode rm = rne)  {
+    assert_cond(UseZfh);
+    fp_fm<H_16_hp, 0b1000011>(Rd, Rs1, Rs2, Rs3, rm);
+  }
+
+// --------------  ZFA Instruction Definitions  --------------
+// Zfa Extension for Additional Floating-Point Instructions
+  void _fli_h(FloatRegister Rd, uint8_t Rs1) {
+    assert_cond(UseZfa && UseZfh);
+    fp_base<H_16_hp, 0b11110>(Rd, Rs1, 0b00001, 0b000);
+  }
+
+  void _fli_s(FloatRegister Rd, uint8_t Rs1) {
+    assert_cond(UseZfa);
+    fp_base<S_32_sp, 0b11110>(Rd, Rs1, 0b00001, 0b000);
+  }
+
+  void _fli_d(FloatRegister Rd, uint8_t Rs1) {
+    assert_cond(UseZfa);
+    fp_base<D_64_dp, 0b11110>(Rd, Rs1, 0b00001, 0b000);
+  }
+
+  void fminm_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfa && UseZfh);
+    fp_base<H_16_hp, 0b00101>(Rd, Rs1, Rs2, 0b010);
+  }
+
+  void fmaxm_h(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfa && UseZfh);
+    fp_base<H_16_hp, 0b00101>(Rd, Rs1, Rs2, 0b011);
+  }
+
+  void fminm_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfa);
+    fp_base<S_32_sp, 0b00101>(Rd, Rs1, Rs2, 0b010);
+  }
+
+  void fmaxm_s(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfa);
+    fp_base<S_32_sp, 0b00101>(Rd, Rs1, Rs2, 0b011);
+  }
+
+  void fminm_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfa);
+    fp_base<D_64_dp, 0b00101>(Rd, Rs1, Rs2, 0b010);
+  }
+
+  void fmaxm_d(FloatRegister Rd, FloatRegister Rs1, FloatRegister Rs2) {
+    assert_cond(UseZfa);
+    fp_base<D_64_dp, 0b00101>(Rd, Rs1, Rs2, 0b011);
+  }
 
 // ==========================
 // RISC-V Vector Extension
@@ -1375,10 +1843,8 @@ static Assembler::SEW elemtype_to_sew(BasicType etype) {
 }
 
 #define patch_vtype(hsb, lsb, vlmul, vsew, vta, vma, vill)   \
-    if (vill == 1) {                                         \
-      guarantee((vlmul | vsew | vta | vma == 0),             \
-                "the other bits in vtype shall be zero");    \
-    }                                                        \
+    /* If vill then other bits of vtype must be zero. */     \
+    guarantee(!vill, "vill not supported");                  \
     patch((address)&insn, lsb + 2, lsb, vlmul);              \
     patch((address)&insn, lsb + 5, lsb + 3, vsew);           \
     patch((address)&insn, lsb + 6, vta);                     \
@@ -1407,7 +1873,7 @@ static Assembler::SEW elemtype_to_sew(BasicType etype) {
   void NAME(Register Rd, uint32_t imm, SEW sew, LMUL lmul = m1,           \
             VMA vma = mu, VTA vta = tu, bool vill = false) {              \
     unsigned insn = 0;                                                    \
-    guarantee(is_unsigned_imm_in_range(imm, 5, 0), "imm is invalid");     \
+    guarantee(is_uimm5(imm), "uimm is invalid");                           \
     patch((address)&insn, 6, 0, op);                                      \
     patch((address)&insn, 14, 12, funct3);                                \
     patch((address)&insn, 19, 15, imm);                                   \
@@ -1463,7 +1929,7 @@ enum VectorMask {
   }
 
   // Vector Mask
-  INSN(vpopc_m,  0b1010111, 0b010, 0b10000, 0b010000);
+  INSN(vcpop_m,  0b1010111, 0b010, 0b10000, 0b010000);
   INSN(vfirst_m, 0b1010111, 0b010, 0b10001, 0b010000);
 #undef INSN
 
@@ -1487,12 +1953,19 @@ enum VectorMask {
   INSN(viota_m,   0b1010111, 0b010, 0b10000, 0b010100);
 
   // Vector Single-Width Floating-Point/Integer Type-Convert Instructions
-  INSN(vfcvt_xu_f_v, 0b1010111, 0b001, 0b00000, 0b010010);
-  INSN(vfcvt_x_f_v,  0b1010111, 0b001, 0b00001, 0b010010);
-  INSN(vfcvt_f_xu_v, 0b1010111, 0b001, 0b00010, 0b010010);
-  INSN(vfcvt_f_x_v,  0b1010111, 0b001, 0b00011, 0b010010);
-  INSN(vfcvt_rtz_xu_f_v, 0b1010111, 0b001, 0b00110, 0b010010);
+  INSN(vfcvt_x_f_v,      0b1010111, 0b001, 0b00001, 0b010010);
+  INSN(vfcvt_f_x_v,      0b1010111, 0b001, 0b00011, 0b010010);
   INSN(vfcvt_rtz_x_f_v,  0b1010111, 0b001, 0b00111, 0b010010);
+
+  // Vector Widening Floating-Point/Integer Type-Convert Instructions
+  INSN(vfwcvt_f_x_v,      0b1010111, 0b001, 0b01011, 0b010010);
+  INSN(vfwcvt_f_f_v,      0b1010111, 0b001, 0b01100, 0b010010);
+  INSN(vfwcvt_rtz_x_f_v,  0b1010111, 0b001, 0b01111, 0b010010);
+
+  // Vector Narrowing Floating-Point/Integer Type-Convert Instructions
+  INSN(vfncvt_f_x_w,      0b1010111, 0b001, 0b10011, 0b010010);
+  INSN(vfncvt_f_f_w,      0b1010111, 0b001, 0b10100, 0b010010);
+  INSN(vfncvt_rtz_x_f_w,  0b1010111, 0b001, 0b10111, 0b010010);
 
   // Vector Floating-Point Instruction
   INSN(vfsqrt_v,  0b1010111, 0b001, 0b00000, 0b010011);
@@ -1537,7 +2010,7 @@ enum VectorMask {
 // r_vm
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, VectorRegister Vs2, uint32_t imm, VectorMask vm = unmasked) {       \
-    guarantee(is_unsigned_imm_in_range(imm, 5, 0), "imm is invalid");                              \
+    guarantee(is_uimm5(imm), "uimm is invalid");                                                    \
     patch_VArith(op, Vd, funct3, (uint32_t)(imm & 0x1f), Vs2, vm, funct6);                         \
   }
 
@@ -1546,11 +2019,19 @@ enum VectorMask {
   INSN(vsrl_vi,    0b1010111, 0b011, 0b101000);
   INSN(vsll_vi,    0b1010111, 0b011, 0b100101);
 
+  // Vector Slide Instructions
+  INSN(vslideup_vi,   0b1010111, 0b011, 0b001110);
+  INSN(vslidedown_vi, 0b1010111, 0b011, 0b001111);
+
+  // Vector Narrowing Integer Right Shift Instructions
+  INSN(vnsra_wi, 0b1010111, 0b011, 0b101101);
+  INSN(vnsrl_wi, 0b1010111, 0b011, 0b101100);
+
 #undef INSN
 
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, VectorRegister Vs1, VectorRegister Vs2, VectorMask vm = unmasked) { \
-    patch_VArith(op, Vd, funct3, Vs1->encoding_nocheck(), Vs2, vm, funct6);                        \
+    patch_VArith(op, Vd, funct3, Vs1->raw_encoding(), Vs2, vm, funct6);                            \
   }
 
   // Vector Single-Width Floating-Point Fused Multiply-Add Instructions
@@ -1573,7 +2054,7 @@ enum VectorMask {
 
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, Register Rs1, VectorRegister Vs2, VectorMask vm = unmasked) {       \
-    patch_VArith(op, Vd, funct3, Rs1->encoding_nocheck(), Vs2, vm, funct6);                        \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);                            \
   }
 
   // Vector Single-Width Integer Multiply-Add Instructions
@@ -1582,13 +2063,11 @@ enum VectorMask {
   INSN(vnmsac_vx, 0b1010111, 0b110, 0b101111);
   INSN(vmacc_vx,  0b1010111, 0b110, 0b101101);
 
-  INSN(vrsub_vx,  0b1010111, 0b100, 0b000011);
-
 #undef INSN
 
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, FloatRegister Rs1, VectorRegister Vs2, VectorMask vm = unmasked) {  \
-    patch_VArith(op, Vd, funct3, Rs1->encoding_nocheck(), Vs2, vm, funct6);                        \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);                            \
   }
 
   // Vector Single-Width Floating-Point Fused Multiply-Add Instructions
@@ -1605,11 +2084,11 @@ enum VectorMask {
 
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, VectorRegister Vs2, VectorRegister Vs1, VectorMask vm = unmasked) { \
-    patch_VArith(op, Vd, funct3, Vs1->encoding_nocheck(), Vs2, vm, funct6);                        \
+    patch_VArith(op, Vd, funct3, Vs1->raw_encoding(), Vs2, vm, funct6);                            \
   }
 
   // Vector Single-Width Floating-Point Reduction Instructions
-  INSN(vfredsum_vs,   0b1010111, 0b001, 0b000001);
+  INSN(vfredusum_vs,  0b1010111, 0b001, 0b000001);
   INSN(vfredosum_vs,  0b1010111, 0b001, 0b000011);
   INSN(vfredmin_vs,   0b1010111, 0b001, 0b000101);
   INSN(vfredmax_vs,   0b1010111, 0b001, 0b000111);
@@ -1624,6 +2103,10 @@ enum VectorMask {
   INSN(vredmaxu_vs,   0b1010111, 0b010, 0b000110);
   INSN(vredmax_vs,    0b1010111, 0b010, 0b000111);
 
+  // Vector Widening Integer Reduction Instructions
+  INSN(vwredsum_vs,    0b1010111, 0b000, 0b110001);
+  INSN(vwredsumu_vs,   0b1010111, 0b000, 0b110000);
+
   // Vector Floating-Point Compare Instructions
   INSN(vmfle_vv, 0b1010111, 0b001, 0b011001);
   INSN(vmflt_vv, 0b1010111, 0b001, 0b011011);
@@ -1631,9 +2114,9 @@ enum VectorMask {
   INSN(vmfeq_vv, 0b1010111, 0b001, 0b011000);
 
   // Vector Floating-Point Sign-Injection Instructions
+  INSN(vfsgnj_vv, 0b1010111, 0b001, 0b001000);
   INSN(vfsgnjx_vv, 0b1010111, 0b001, 0b001010);
   INSN(vfsgnjn_vv, 0b1010111, 0b001, 0b001001);
-  INSN(vfsgnj_vv,  0b1010111, 0b001, 0b001000);
 
   // Vector Floating-Point MIN/MAX Instructions
   INSN(vfmax_vv,   0b1010111, 0b001, 0b000110);
@@ -1662,6 +2145,10 @@ enum VectorMask {
   INSN(vmulh_vv,   0b1010111, 0b010, 0b100111);
   INSN(vmul_vv,    0b1010111, 0b010, 0b100101);
 
+  // Vector Widening Integer Multiply Instructions
+  INSN(vwmul_vv,    0b1010111, 0b010, 0b111011);
+  INSN(vwmulu_vv,   0b1010111, 0b010, 0b111000);
+
   // Vector Integer Min/Max Instructions
   INSN(vmax_vv,  0b1010111, 0b000, 0b000111);
   INSN(vmaxu_vv, 0b1010111, 0b000, 0b000110);
@@ -1687,15 +2174,24 @@ enum VectorMask {
   INSN(vand_vv, 0b1010111, 0b000, 0b001001);
 
   // Vector Single-Width Integer Add and Subtract
-  INSN(vsub_vv, 0b1010111, 0b000, 0b000010);
   INSN(vadd_vv, 0b1010111, 0b000, 0b000000);
+  INSN(vsub_vv, 0b1010111, 0b000, 0b000010);
+
+  // Vector Saturating Integer Add and Subtract
+  INSN(vsadd_vv,  0b1010111, 0b000, 0b100001);
+  INSN(vsaddu_vv, 0b1010111, 0b000, 0b100000);
+  INSN(vssub_vv,  0b1010111, 0b000, 0b100011);
+  INSN(vssubu_vv, 0b1010111, 0b000, 0b100010);
+
+  // Vector Register Gather Instructions
+  INSN(vrgather_vv,     0b1010111, 0b000, 0b001100);
 
 #undef INSN
 
 
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, VectorRegister Vs2, Register Rs1, VectorMask vm = unmasked) {       \
-    patch_VArith(op, Vd, funct3, Rs1->encoding_nocheck(), Vs2, vm, funct6);                        \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);                            \
   }
 
   // Vector Integer Divide Instructions
@@ -1709,6 +2205,9 @@ enum VectorMask {
   INSN(vmulhu_vx,  0b1010111, 0b110, 0b100100);
   INSN(vmulh_vx,   0b1010111, 0b110, 0b100111);
   INSN(vmul_vx,    0b1010111, 0b110, 0b100101);
+
+  // Vector Widening Integer Add/Subtract
+  INSN(vwadd_vx, 0b1010111, 0b110, 0b110001);
 
   // Vector Integer Min/Max Instructions
   INSN(vmax_vx,  0b1010111, 0b100, 0b000111);
@@ -1741,14 +2240,40 @@ enum VectorMask {
   INSN(vand_vx, 0b1010111, 0b100, 0b001001);
 
   // Vector Single-Width Integer Add and Subtract
-  INSN(vsub_vx, 0b1010111, 0b100, 0b000010);
-  INSN(vadd_vx, 0b1010111, 0b100, 0b000000);
+  INSN(vsub_vx,  0b1010111, 0b100, 0b000010);
+  INSN(vadd_vx,  0b1010111, 0b100, 0b000000);
+
+  // Vector Integer reverse subtract
+  INSN(vrsub_vx, 0b1010111, 0b100, 0b000011);
+
+  // Vector Slide Instructions
+  INSN(vslidedown_vx, 0b1010111, 0b100, 0b001111);
+
+#undef INSN
+
+#define INSN(NAME, op, funct3, vm, funct6)                                                         \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, Register Rs1) {                                 \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);                            \
+  }
+
+  // Vector Integer Merge Instructions
+  INSN(vmerge_vxm,  0b1010111, 0b100, 0b0, 0b010111);
+
+#undef INSN
+
+#define INSN(NAME, op, funct3, vm, funct6)                                                         \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, FloatRegister Rs1) {                            \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);                            \
+  }
+
+  // Vector Floating-Point Merge Instruction
+  INSN(vfmerge_vfm,  0b1010111, 0b101, 0b0, 0b010111);
 
 #undef INSN
 
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, VectorRegister Vs2, FloatRegister Rs1, VectorMask vm = unmasked) {  \
-    patch_VArith(op, Vd, funct3, Rs1->encoding_nocheck(), Vs2, vm, funct6);                        \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);                            \
   }
 
   // Vector Floating-Point Compare Instructions
@@ -1758,11 +2283,6 @@ enum VectorMask {
   INSN(vmflt_vf, 0b1010111, 0b101, 0b011011);
   INSN(vmfne_vf, 0b1010111, 0b101, 0b011100);
   INSN(vmfeq_vf, 0b1010111, 0b101, 0b011000);
-
-  // Vector Floating-Point Sign-Injection Instructions
-  INSN(vfsgnjx_vf, 0b1010111, 0b101, 0b001010);
-  INSN(vfsgnjn_vf, 0b1010111, 0b101, 0b001001);
-  INSN(vfsgnj_vf,  0b1010111, 0b101, 0b001000);
 
   // Vector Floating-Point MIN/MAX Instructions
   INSN(vfmax_vf, 0b1010111, 0b101, 0b000110);
@@ -1782,36 +2302,45 @@ enum VectorMask {
 
 #define INSN(NAME, op, funct3, funct6)                                                             \
   void NAME(VectorRegister Vd, VectorRegister Vs2, int32_t imm, VectorMask vm = unmasked) {        \
-    guarantee(is_imm_in_range(imm, 5, 0), "imm is invalid");                                       \
-    patch_VArith(op, Vd, funct3, (uint32_t)imm & 0x1f, Vs2, vm, funct6);                           \
+    guarantee(is_simm5(imm), "imm is invalid");                                                    \
+    patch_VArith(op, Vd, funct3, (uint32_t)(imm & 0x1f), Vs2, vm, funct6);                         \
   }
 
+  // Vector Integer Comparison Instructions
   INSN(vmsgt_vi,  0b1010111, 0b011, 0b011111);
   INSN(vmsgtu_vi, 0b1010111, 0b011, 0b011110);
   INSN(vmsle_vi,  0b1010111, 0b011, 0b011101);
   INSN(vmsleu_vi, 0b1010111, 0b011, 0b011100);
   INSN(vmsne_vi,  0b1010111, 0b011, 0b011001);
   INSN(vmseq_vi,  0b1010111, 0b011, 0b011000);
+
+  // Vector Bitwise Logical Instructions
   INSN(vxor_vi,   0b1010111, 0b011, 0b001011);
   INSN(vor_vi,    0b1010111, 0b011, 0b001010);
   INSN(vand_vi,   0b1010111, 0b011, 0b001001);
+
+  // Vector Single-Width Integer Add and Subtract
   INSN(vadd_vi,   0b1010111, 0b011, 0b000000);
+
+  // Vector Integer reverse subtract
+  INSN(vrsub_vi,  0b1010111, 0b011, 0b000011);
 
 #undef INSN
 
-#define INSN(NAME, op, funct3, funct6)                                                             \
-  void NAME(VectorRegister Vd, int32_t imm, VectorRegister Vs2, VectorMask vm = unmasked) {        \
-    guarantee(is_imm_in_range(imm, 5, 0), "imm is invalid");                                       \
-    patch_VArith(op, Vd, funct3, (uint32_t)(imm & 0x1f), Vs2, vm, funct6);                         \
+#define INSN(NAME, op, funct3, vm, funct6)                                    \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, int32_t imm) {             \
+    guarantee(is_simm5(imm), "imm is invalid");                               \
+    patch_VArith(op, Vd, funct3, (uint32_t)(imm & 0x1f), Vs2, vm, funct6);    \
   }
 
-  INSN(vrsub_vi, 0b1010111, 0b011, 0b000011);
+  // Vector Integer Merge Instructions
+  INSN(vmerge_vim,  0b1010111, 0b011, 0b0, 0b010111);
 
 #undef INSN
 
 #define INSN(NAME, op, funct3, vm, funct6)                                   \
   void NAME(VectorRegister Vd, VectorRegister Vs2, VectorRegister Vs1) {     \
-    patch_VArith(op, Vd, funct3, Vs1->encoding_nocheck(), Vs2, vm, funct6);  \
+    patch_VArith(op, Vd, funct3, Vs1->raw_encoding(), Vs2, vm, funct6);      \
   }
 
   // Vector Compress Instruction
@@ -1819,19 +2348,22 @@ enum VectorMask {
 
   // Vector Mask-Register Logical Instructions
   INSN(vmxnor_mm,   0b1010111, 0b010, 0b1, 0b011111);
-  INSN(vmornot_mm,  0b1010111, 0b010, 0b1, 0b011100);
+  INSN(vmorn_mm,    0b1010111, 0b010, 0b1, 0b011100);
   INSN(vmnor_mm,    0b1010111, 0b010, 0b1, 0b011110);
   INSN(vmor_mm,     0b1010111, 0b010, 0b1, 0b011010);
   INSN(vmxor_mm,    0b1010111, 0b010, 0b1, 0b011011);
-  INSN(vmandnot_mm, 0b1010111, 0b010, 0b1, 0b011000);
+  INSN(vmandn_mm,   0b1010111, 0b010, 0b1, 0b011000);
   INSN(vmnand_mm,   0b1010111, 0b010, 0b1, 0b011101);
   INSN(vmand_mm,    0b1010111, 0b010, 0b1, 0b011001);
+
+  // Vector Integer Merge Instructions
+  INSN(vmerge_vvm,  0b1010111, 0b000, 0b0, 0b010111);
 
 #undef INSN
 
 #define INSN(NAME, op, funct3, Vs2, vm, funct6)                            \
   void NAME(VectorRegister Vd, int32_t imm) {                              \
-    guarantee(is_imm_in_range(imm, 5, 0), "imm is invalid");               \
+    guarantee(is_simm5(imm), "imm is invalid");                            \
     patch_VArith(op, Vd, funct3, (uint32_t)(imm & 0x1f), Vs2, vm, funct6); \
   }
 
@@ -1842,7 +2374,7 @@ enum VectorMask {
 
 #define INSN(NAME, op, funct3, Vs2, vm, funct6)                             \
   void NAME(VectorRegister Vd, FloatRegister Rs1) {                         \
-    patch_VArith(op, Vd, funct3, Rs1->encoding_nocheck(), Vs2, vm, funct6); \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);     \
   }
 
   // Floating-Point Scalar Move Instructions
@@ -1854,7 +2386,7 @@ enum VectorMask {
 
 #define INSN(NAME, op, funct3, Vs2, vm, funct6)                             \
   void NAME(VectorRegister Vd, VectorRegister Vs1) {                        \
-    patch_VArith(op, Vd, funct3, Vs1->encoding_nocheck(), Vs2, vm, funct6); \
+    patch_VArith(op, Vd, funct3, Vs1->raw_encoding(), Vs2, vm, funct6);     \
   }
 
   // Vector Integer Move Instructions
@@ -1864,7 +2396,7 @@ enum VectorMask {
 
 #define INSN(NAME, op, funct3, Vs2, vm, funct6)                             \
    void NAME(VectorRegister Vd, Register Rs1) {                             \
-    patch_VArith(op, Vd, funct3, Rs1->encoding_nocheck(), Vs2, vm, funct6); \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);     \
    }
 
   // Integer Scalar Move Instructions
@@ -1874,7 +2406,6 @@ enum VectorMask {
   INSN(vmv_v_x, 0b1010111, 0b100, v0, 0b1, 0b010111);
 
 #undef INSN
-#undef patch_VArith
 
 #define INSN(NAME, op, funct13, funct6)                    \
   void NAME(VectorRegister Vd, VectorMask vm = unmasked) { \
@@ -1916,14 +2447,29 @@ enum Nf {
     patch_reg((address)&insn, 15, Rs1);                                  \
     emit(insn)
 
-#define INSN(NAME, op, lumop, vm, mop, nf)                                           \
-  void NAME(VectorRegister Vd, Register Rs1, uint32_t width = 0, bool mew = false) { \
-    guarantee(is_unsigned_imm_in_range(width, 3, 0), "width is invalid");            \
+#define INSN(NAME, op, width, lumop, vm, mop, mew, nf)                               \
+  void NAME(VectorRegister Vd, Register Rs1) {                                       \
+    guarantee(is_uimm3(width), "width is invalid");                                  \
     patch_VLdSt(op, Vd, width, Rs1, lumop, vm, mop, mew, nf);                        \
   }
 
   // Vector Load/Store Instructions
-  INSN(vl1r_v, 0b0000111, 0b01000, 0b1, 0b00, g1);
+  INSN(vl1re8_v,  0b0000111, 0b000, 0b01000, 0b1, 0b00, 0b0, g1);
+  INSN(vl1re16_v, 0b0000111, 0b101, 0b01000, 0b1, 0b00, 0b0, g1);
+  INSN(vl1re32_v, 0b0000111, 0b110, 0b01000, 0b1, 0b00, 0b0, g1);
+  INSN(vl1re64_v, 0b0000111, 0b111, 0b01000, 0b1, 0b00, 0b0, g1);
+  INSN(vl2re8_v,  0b0000111, 0b000, 0b01000, 0b1, 0b00, 0b0, g2);
+  INSN(vl2re16_v, 0b0000111, 0b101, 0b01000, 0b1, 0b00, 0b0, g2);
+  INSN(vl2re32_v, 0b0000111, 0b110, 0b01000, 0b1, 0b00, 0b0, g2);
+  INSN(vl2re64_v, 0b0000111, 0b111, 0b01000, 0b1, 0b00, 0b0, g2);
+  INSN(vl4re8_v,  0b0000111, 0b000, 0b01000, 0b1, 0b00, 0b0, g4);
+  INSN(vl4re16_v, 0b0000111, 0b101, 0b01000, 0b1, 0b00, 0b0, g4);
+  INSN(vl4re32_v, 0b0000111, 0b110, 0b01000, 0b1, 0b00, 0b0, g4);
+  INSN(vl4re64_v, 0b0000111, 0b111, 0b01000, 0b1, 0b00, 0b0, g4);
+  INSN(vl8re8_v,  0b0000111, 0b000, 0b01000, 0b1, 0b00, 0b0, g8);
+  INSN(vl8re16_v, 0b0000111, 0b101, 0b01000, 0b1, 0b00, 0b0, g8);
+  INSN(vl8re32_v, 0b0000111, 0b110, 0b01000, 0b1, 0b00, 0b0, g8);
+  INSN(vl8re64_v, 0b0000111, 0b111, 0b01000, 0b1, 0b00, 0b0, g8);
 
 #undef INSN
 
@@ -1934,6 +2480,9 @@ enum Nf {
 
   // Vector Load/Store Instructions
   INSN(vs1r_v, 0b0100111, 0b000, 0b01000, 0b1, 0b00, 0b0, g1);
+  INSN(vs2r_v, 0b0100111, 0b000, 0b01000, 0b1, 0b00, 0b0, g2);
+  INSN(vs4r_v, 0b0100111, 0b000, 0b01000, 0b1, 0b00, 0b0, g4);
+  INSN(vs8r_v, 0b0100111, 0b000, 0b01000, 0b1, 0b00, 0b0, g8);
 
 #undef INSN
 
@@ -1944,8 +2493,8 @@ enum Nf {
   }
 
   // Vector Unit-Stride Instructions
-  INSN(vle1_v, 0b0000111, 0b000, 0b01011, 0b00, 0b0);
-  INSN(vse1_v, 0b0100111, 0b000, 0b01011, 0b00, 0b0);
+  INSN(vlm_v, 0b0000111, 0b000, 0b01011, 0b00, 0b0);
+  INSN(vsm_v, 0b0100111, 0b000, 0b01011, 0b00, 0b0);
 
 #undef INSN
 
@@ -1973,27 +2522,41 @@ enum Nf {
 
 #undef INSN
 
+#define INSN(NAME, op, width, umop, mop, mew, nf)                                               \
+  void NAME(VectorRegister Vd_or_Vs3, Register Rs1, VectorMask vm = unmasked) { \
+    patch_VLdSt(op, Vd_or_Vs3, width, Rs1, umop, vm, mop, mew, nf);                         \
+  }
+
+  // Vector Unit-Stride Segment Load Instructions
+  INSN(vlseg3e8_v, 0b0000111, 0b000, 0b00000, 0b00, 0b0, g3);
+  INSN(vlseg4e8_v, 0b0000111, 0b000, 0b00000, 0b00, 0b0, g4);
+
+  // Vector Unit-Stride Segment Store Instructions
+  INSN(vsseg3e8_v, 0b0100111, 0b000, 0b00000, 0b00, 0b0, g3);
+  INSN(vsseg4e8_v, 0b0100111, 0b000, 0b00000, 0b00, 0b0, g4);
+
+#undef INSN
+
 #define INSN(NAME, op, width, mop, mew)                                                                  \
   void NAME(VectorRegister Vd, Register Rs1, VectorRegister Vs2, VectorMask vm = unmasked, Nf nf = g1) { \
-    patch_VLdSt(op, Vd, width, Rs1, Vs2->encoding_nocheck(), vm, mop, mew, nf);                          \
+    patch_VLdSt(op, Vd, width, Rs1, Vs2->raw_encoding(), vm, mop, mew, nf);                              \
   }
 
   // Vector unordered indexed load instructions
-  INSN(vluxei8_v,  0b0000111, 0b000, 0b01, 0b0);
-  INSN(vluxei16_v, 0b0000111, 0b101, 0b01, 0b0);
+  INSN( vluxei8_v, 0b0000111, 0b000, 0b01, 0b0);
   INSN(vluxei32_v, 0b0000111, 0b110, 0b01, 0b0);
   INSN(vluxei64_v, 0b0000111, 0b111, 0b01, 0b0);
 
-  // Vector ordered indexed load instructions
-  INSN(vloxei8_v,  0b0000111, 0b000, 0b11, 0b0);
-  INSN(vloxei16_v, 0b0000111, 0b101, 0b11, 0b0);
-  INSN(vloxei32_v, 0b0000111, 0b110, 0b11, 0b0);
-  INSN(vloxei64_v, 0b0000111, 0b111, 0b11, 0b0);
+  // Vector unordered indexed store instructions
+  INSN( vsuxei8_v, 0b0100111, 0b000, 0b01, 0b0);
+  INSN(vsuxei32_v, 0b0100111, 0b110, 0b01, 0b0);
+  INSN(vsuxei64_v, 0b0100111, 0b111, 0b01, 0b0);
+
 #undef INSN
 
 #define INSN(NAME, op, width, mop, mew)                                                                  \
   void NAME(VectorRegister Vd, Register Rs1, Register Rs2, VectorMask vm = unmasked, Nf nf = g1) {       \
-    patch_VLdSt(op, Vd, width, Rs1, Rs2->encoding_nocheck(), vm, mop, mew, nf);                          \
+    patch_VLdSt(op, Vd, width, Rs1, Rs2->raw_encoding(), vm, mop, mew, nf);                              \
   }
 
   // Vector Strided Instructions
@@ -2002,12 +2565,123 @@ enum Nf {
   INSN(vlse32_v, 0b0000111, 0b110, 0b10, 0b0);
   INSN(vlse64_v, 0b0000111, 0b111, 0b10, 0b0);
 
+  INSN(vsse8_v,  0b0100111, 0b000, 0b10, 0b0);
+  INSN(vsse16_v, 0b0100111, 0b101, 0b10, 0b0);
+  INSN(vsse32_v, 0b0100111, 0b110, 0b10, 0b0);
+  INSN(vsse64_v, 0b0100111, 0b111, 0b10, 0b0);
+
 #undef INSN
 #undef patch_VLdSt
 
 // ====================================
+// RISC-V Vector Crypto Extension
+// ====================================
+
+#define INSN(NAME, op, funct3, funct6)                                                             \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, VectorRegister Vs1, VectorMask vm = unmasked) { \
+    patch_VArith(op, Vd, funct3, Vs1->raw_encoding(), Vs2, vm, funct6);                            \
+  }
+
+  // Vector Bit-manipulation used in Cryptography (Zvbb) Extension
+  INSN(vandn_vv,   0b1010111, 0b000, 0b000001);
+  INSN(vror_vv,    0b1010111, 0b000, 0b010100);
+  INSN(vrol_vv,    0b1010111, 0b000, 0b010101);
+
+  // Vector Bit-manipulation used in Cryptography (Zvbc) Extension
+  INSN(vclmul_vv,  0b1010111, 0b010, 0b001100);
+  INSN(vclmulh_vv, 0b1010111, 0b010, 0b001101);
+
+#undef INSN
+
+#define INSN(NAME, op, funct3, funct6)                                                             \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, Register Rs1, VectorMask vm = unmasked) {       \
+    patch_VArith(op, Vd, funct3, Rs1->raw_encoding(), Vs2, vm, funct6);                            \
+  }
+
+  // Vector Bit-manipulation used in Cryptography (Zvbb) Extension
+  INSN(vandn_vx,   0b1010111, 0b100, 0b000001);
+  INSN(vrol_vx,    0b1010111, 0b100, 0b010101);
+  INSN(vror_vx,    0b1010111, 0b100, 0b010100);
+
+#undef INSN
+
+#define patch_VArith_imm6(op, Reg, funct3, Reg_or_Imm5, I5, Vs2, vm, funct6)   \
+    unsigned insn = 0;                                                         \
+    patch((address)&insn, 6, 0, op);                                           \
+    patch((address)&insn, 14, 12, funct3);                                     \
+    patch((address)&insn, 19, 15, Reg_or_Imm5);                                \
+    patch((address)&insn, 25, vm);                                             \
+    patch((address)&insn, 26, I5);                                             \
+    patch((address)&insn, 31, 27, funct6);                                     \
+    patch_reg((address)&insn, 7, Reg);                                         \
+    patch_reg((address)&insn, 20, Vs2);                                        \
+    emit(insn)
+
+#define INSN(NAME, op, funct3, funct6)                                                             \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, uint32_t imm, VectorMask vm = unmasked) {       \
+    guarantee(is_uimm6(imm), "uimm is invalid");                                                   \
+    patch_VArith_imm6(op, Vd, funct3, (uint32_t)(imm & 0x1f), (uint32_t)((imm >> 5) & 0x1), Vs2, vm, funct6);  \
+  }
+
+  // Vector Bit-manipulation used in Cryptography (Zvbb) Extension
+  // NOTE: there is no corresponding vrol.vi supplied by the extension, but it can be emulated with vror.vi easily.
+  INSN(vror_vi,    0b1010111, 0b011, 0b01010);
+
+#undef INSN
+#undef patch_VArith_imm6
+
+#define INSN(NAME, op, funct3, Vs1, funct6)                                    \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, VectorMask vm = unmasked) { \
+    patch_VArith(op, Vd, funct3, Vs1, Vs2, vm, funct6);                        \
+  }
+
+  // Vector Bit-manipulation used in Cryptography (Zvkb) Extension
+  INSN(vbrev_v,  0b1010111, 0b010, 0b01010, 0b010010); // reverse bits in every element
+  INSN(vbrev8_v, 0b1010111, 0b010, 0b01000, 0b010010); // reverse bits in every byte of element
+  INSN(vrev8_v,  0b1010111, 0b010, 0b01001, 0b010010); // reverse bytes in every elememt
+
+  // Vector AES instructions (Zvkned extension)
+  INSN(vaesem_vv,   0b1110111, 0b010, 0b00010, 0b101000);
+  INSN(vaesef_vv,   0b1110111, 0b010, 0b00011, 0b101000);
+
+  INSN(vaesdm_vv,   0b1110111, 0b010, 0b00000, 0b101000);
+  INSN(vaesdf_vv,   0b1110111, 0b010, 0b00001, 0b101000);
+
+  INSN(vclz_v,  0b1010111, 0b010, 0b01100, 0b010010); // count leading zeros
+  INSN(vctz_v,  0b1010111, 0b010, 0b01101, 0b010010); // count trailing zeros
+
+#undef INSN
+
+#define INSN(NAME, op, funct3, vm, funct6)                                   \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, VectorRegister Vs1) {     \
+    patch_VArith(op, Vd, funct3, Vs1->raw_encoding(), Vs2, vm, funct6);      \
+  }
+
+  // Vector SHA-2 Secure Hash (Zvknh[ab]) Extension
+  INSN(vsha2ms_vv,  0b1110111, 0b010, 0b1, 0b101101);
+  INSN(vsha2ch_vv,  0b1110111, 0b010, 0b1, 0b101110);
+  INSN(vsha2cl_vv,  0b1110111, 0b010, 0b1, 0b101111);
+
+  // Vector GHASH (Zvkg) Extension
+  INSN(vghsh_vv,    0b1110111, 0b010, 0b1, 0b101100);
+
+#undef INSN
+
+#define INSN(NAME, op, funct3, Vs1, funct6)                                    \
+  void NAME(VectorRegister Vd, VectorRegister Vs2, VectorMask vm = unmasked) { \
+    patch_VArith(op, Vd, funct3, Vs1, Vs2, vm, funct6);                        \
+  }
+
+  // Vector Basic Bit-manipulation (Zvbb) Extension
+  INSN(vcpop_v,  0b1010111, 0b010, 0b01110, 0b010010);
+
+#undef INSN
+
+#undef patch_VArith
+
+// ====================================
 // RISC-V Bit-Manipulation Extension
-// Currently only support Zba and Zbb.
+// Currently only support Zba, Zbb and Zbs bitmanip extensions.
 // ====================================
 #define INSN(NAME, op, funct3, funct7)                  \
   void NAME(Register Rd, Register Rs1, Register Rs2) {  \
@@ -2022,10 +2696,10 @@ enum Nf {
   }
 
   INSN(add_uw,    0b0111011, 0b000, 0b0000100);
-  INSN(rol,       0b0110011, 0b001, 0b0110000);
-  INSN(rolw,      0b0111011, 0b001, 0b0110000);
-  INSN(ror,       0b0110011, 0b101, 0b0110000);
-  INSN(rorw,      0b0111011, 0b101, 0b0110000);
+  INSN(rolr,      0b0110011, 0b001, 0b0110000);
+  INSN(rolrw,     0b0111011, 0b001, 0b0110000);
+  INSN(rorr,      0b0110011, 0b101, 0b0110000);
+  INSN(rorrw,     0b0111011, 0b101, 0b0110000);
   INSN(sh1add,    0b0110011, 0b010, 0b0010000);
   INSN(sh2add,    0b0110011, 0b100, 0b0010000);
   INSN(sh3add,    0b0110011, 0b110, 0b0010000);
@@ -2053,10 +2727,11 @@ enum Nf {
     emit(insn);                                         \
   }
 
+  INSN(brev8,  0b0010011, 0b101, 0b011010000111);
   INSN(rev8,   0b0010011, 0b101, 0b011010111000);
-  INSN(sext_b, 0b0010011, 0b001, 0b011000000100);
-  INSN(sext_h, 0b0010011, 0b001, 0b011000000101);
-  INSN(zext_h, 0b0111011, 0b100, 0b000010000000);
+  INSN(_sext_b, 0b0010011, 0b001, 0b011000000100);
+  INSN(_sext_h, 0b0010011, 0b001, 0b011000000101);
+  INSN(_zext_h, 0b0111011, 0b100, 0b000010000000);
   INSN(clz,    0b0010011, 0b001, 0b011000000000);
   INSN(clzw,   0b0011011, 0b001, 0b011000000000);
   INSN(ctz,    0b0010011, 0b001, 0b011000000001);
@@ -2082,6 +2757,7 @@ enum Nf {
 
   INSN(rori,    0b0010011, 0b101, 0b011000);
   INSN(slli_uw, 0b0011011, 0b001, 0b000010);
+  INSN(bexti,   0b0010011, 0b101, 0b010010);
 
 #undef INSN
 
@@ -2106,57 +2782,103 @@ enum Nf {
 // RISC-V Compressed Instructions Extension
 // ========================================
 // Note:
-// 1. When UseRVC is enabled, 32-bit instructions under 'CompressibleRegion's will be
-//    transformed to 16-bit instructions if compressible.
-// 2. RVC instructions in Assembler always begin with 'c_' prefix, as 'c_li',
-//    but most of time we have no need to explicitly use these instructions.
-// 3. 'CompressibleRegion' is introduced to hint instructions in this Region's RTTI range
-//    are qualified to be compressed with their 2-byte versions.
-//    An example:
+// 1. Assembler functions encoding 16-bit compressed instructions always begin with a 'c_'
+//    prefix, such as 'c_add'. Correspondingly, assembler functions encoding normal 32-bit
+//    instructions with begin with a '_' prefix, such as "_add". Most of time users have no
+//    need to explicitly emit these compressed instructions. Instead, they still use unified
+//    wrappers such as 'add' which do the compressing work through 'c_add' depending on the
+//    the operands of the instruction and availability of the RVC hardware extension.
 //
-//      CompressibleRegion cr(_masm);
-//      __ andr(...);      // this instruction could change to c.and if able to
+// 2. 'CompressibleScope' and 'IncompressibleScope' are introduced to mark assembler scopes
+//     within which instructions are qualified or unqualified to be compressed into their 16-bit
+//     versions. An example:
 //
-// 4. Using -XX:PrintAssemblyOptions=no-aliases could distinguish RVC instructions from
-//    normal ones.
+//      CompressibleScope scope(_masm);
+//      __ add(...);       // this instruction will be compressed into 'c.add' when possible
+//      {
+//         IncompressibleScope scope(_masm);
+//         __ add(...);    // this instruction will not be compressed
+//         {
+//            CompressibleScope scope(_masm);
+//            __ add(...); // this instruction will be compressed into 'c.add' when possible
+//         }
+//      }
 //
+// 3. When printing JIT assembly code, using -XX:PrintAssemblyOptions=no-aliases could help
+//    distinguish compressed 16-bit instructions from normal 32-bit ones.
 
 private:
-  bool _in_compressible_region;
+  bool _in_compressible_scope;
 public:
-  bool in_compressible_region() const { return _in_compressible_region; }
-  void set_in_compressible_region(bool b) { _in_compressible_region = b; }
+  bool in_compressible_scope() const { return _in_compressible_scope; }
+  void set_in_compressible_scope(bool b) { _in_compressible_scope = b; }
 public:
 
-  // a compressible region
-  class CompressibleRegion : public StackObj {
+  // An abstract compressible scope
+  class AbstractCompressibleScope : public StackObj {
   protected:
     Assembler *_masm;
-    bool _saved_in_compressible_region;
-  public:
-    CompressibleRegion(Assembler *_masm)
+    bool _saved_in_compressible_scope;
+  protected:
+    AbstractCompressibleScope(Assembler *_masm)
     : _masm(_masm)
-    , _saved_in_compressible_region(_masm->in_compressible_region()) {
-      _masm->set_in_compressible_region(true);
+    , _saved_in_compressible_scope(_masm->in_compressible_scope()) {}
+  };
+  // A compressible scope
+  class CompressibleScope : public AbstractCompressibleScope {
+  public:
+    CompressibleScope(Assembler *_masm) : AbstractCompressibleScope(_masm) {
+      _masm->set_in_compressible_scope(true);
     }
-    ~CompressibleRegion() {
-      _masm->set_in_compressible_region(_saved_in_compressible_region);
+    ~CompressibleScope() {
+      _masm->set_in_compressible_scope(_saved_in_compressible_scope);
+    }
+  };
+  // An incompressible scope
+  class IncompressibleScope : public AbstractCompressibleScope {
+  public:
+    IncompressibleScope(Assembler *_masm) : AbstractCompressibleScope(_masm) {
+      _masm->set_in_compressible_scope(false);
+    }
+    ~IncompressibleScope() {
+      _masm->set_in_compressible_scope(_saved_in_compressible_scope);
     }
   };
 
+public:
+  // Emit a relocation.
+  void relocate(RelocationHolder const& rspec, int format = 0) {
+    AbstractAssembler::relocate(rspec, format);
+  }
+  void relocate(relocInfo::relocType rtype, int format = 0) {
+    AbstractAssembler::relocate(rtype, format);
+  }
+  template <typename Callback>
+  void relocate(RelocationHolder const& rspec, Callback emit_insts, int format = 0) {
+    AbstractAssembler::relocate(rspec, format);
+    IncompressibleScope scope(this); // relocations
+    emit_insts();
+  }
+  template <typename Callback>
+  void relocate(relocInfo::relocType rtype, Callback emit_insts, int format = 0) {
+    AbstractAssembler::relocate(rtype, format);
+    IncompressibleScope scope(this); // relocations
+    emit_insts();
+  }
+
   // patch a 16-bit instruction.
   static void c_patch(address a, unsigned msb, unsigned lsb, uint16_t val) {
-    assert_cond(a != NULL);
+    assert_cond(a != nullptr);
     assert_cond(msb >= lsb && msb <= 15);
     unsigned nbits = msb - lsb + 1;
     guarantee(val < (1U << nbits), "Field too big for insn");
     uint16_t mask = (1U << nbits) - 1;
     val <<= lsb;
     mask <<= lsb;
-    uint16_t target = *(uint16_t *)a;
+    uint16_t target = ld_c_instr(a);
     target &= ~mask;
     target |= val;
-    *(uint16_t *)a = target;
+    sd_c_instr(a, target);
   }
 
   static void c_patch(address a, unsigned bit, uint16_t val) {
@@ -2165,22 +2887,22 @@ public:
 
   // patch a 16-bit instruction with a general purpose register ranging [0, 31] (5 bits)
   static void c_patch_reg(address a, unsigned lsb, Register reg) {
-    c_patch(a, lsb + 4, lsb, reg->encoding_nocheck());
+    c_patch(a, lsb + 4, lsb, reg->raw_encoding());
   }
 
   // patch a 16-bit instruction with a general purpose register ranging [8, 15] (3 bits)
   static void c_patch_compressed_reg(address a, unsigned lsb, Register reg) {
-    c_patch(a, lsb + 2, lsb, reg->compressed_encoding_nocheck());
+    c_patch(a, lsb + 2, lsb, reg->compressed_raw_encoding());
   }
 
   // patch a 16-bit instruction with a float register ranging [0, 31] (5 bits)
   static void c_patch_reg(address a, unsigned lsb, FloatRegister reg) {
-    c_patch(a, lsb + 4, lsb, reg->encoding_nocheck());
+    c_patch(a, lsb + 4, lsb, reg->raw_encoding());
   }
 
   // patch a 16-bit instruction with a float register ranging [8, 15] (3 bits)
   static void c_patch_compressed_reg(address a, unsigned lsb, FloatRegister reg) {
-    c_patch(a, lsb + 2, lsb, reg->compressed_encoding_nocheck());
+    c_patch(a, lsb + 2, lsb, reg->compressed_raw_encoding());
   }
 
 // --------------  RVC Instruction Definitions  --------------
@@ -2190,8 +2912,8 @@ public:
   }
 
 #define INSN(NAME, funct3, op)                                                               \
-  void NAME(Register Rd_Rs1, int32_t imm) {                                                  \
-    assert_cond(is_imm_in_range(imm, 6, 0));                                                 \
+  void NAME(Register Rd_Rs1, int64_t imm) {                                                  \
+    assert_cond(is_simm6(imm));                                                              \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
     c_patch((address)&insn, 6, 2, (imm & right_n_bits(5)));                                  \
@@ -2207,8 +2929,8 @@ public:
 #undef INSN
 
 #define INSN(NAME, funct3, op)                                                               \
-  void NAME(int32_t imm) {                                                                   \
-    assert_cond(is_imm_in_range(imm, 10, 0));                                                \
+  void NAME(int64_t imm) {                                                                   \
+    assert_cond(is_simm10(imm));                                                             \
     assert_cond((imm & 0b1111) == 0);                                                        \
     assert_cond(imm != 0);                                                                   \
     uint16_t insn = 0;                                                                       \
@@ -2228,8 +2950,8 @@ public:
 #undef INSN
 
 #define INSN(NAME, funct3, op)                                                               \
-  void NAME(Register Rd, uint32_t uimm) {                                                    \
-    assert_cond(is_unsigned_imm_in_range(uimm, 10, 0));                                      \
+  void NAME(Register Rd, uint64_t uimm) {                                                    \
+    assert_cond(is_uimm10(uimm));                                                            \
     assert_cond((uimm & 0b11) == 0);                                                         \
     assert_cond(uimm != 0);                                                                  \
     uint16_t insn = 0;                                                                       \
@@ -2249,7 +2971,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rd_Rs1, uint32_t shamt) {                                               \
-    assert_cond(is_unsigned_imm_in_range(shamt, 6, 0));                                      \
+    assert_cond(is_uimm6(shamt));                                                            \
     assert_cond(shamt != 0);                                                                 \
     assert_cond(Rd_Rs1 != x0);                                                               \
     uint16_t insn = 0;                                                                       \
@@ -2267,7 +2989,7 @@ public:
 
 #define INSN(NAME, funct3, funct2, op)                                                       \
   void NAME(Register Rd_Rs1, uint32_t shamt) {                                               \
-    assert_cond(is_unsigned_imm_in_range(shamt, 6, 0));                                      \
+    assert_cond(is_uimm6(shamt));                                                            \
     assert_cond(shamt != 0);                                                                 \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
@@ -2285,8 +3007,8 @@ public:
 #undef INSN
 
 #define INSN(NAME, funct3, funct2, op)                                                       \
-  void NAME(Register Rd_Rs1, int32_t imm) {                                                  \
-    assert_cond(is_imm_in_range(imm, 6, 0));                                                 \
+  void NAME(Register Rd_Rs1, int64_t imm) {                                                  \
+    assert_cond(is_simm6(imm));                                                              \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
     c_patch((address)&insn, 6, 2, (imm & right_n_bits(5)));                                  \
@@ -2337,21 +3059,23 @@ public:
 
 #undef INSN
 
-#define INSN(NAME, funct4, op)                                                               \
-  void NAME(Register Rs1) {                                                                  \
-    assert_cond(Rs1 != x0);                                                                  \
-    uint16_t insn = 0;                                                                       \
-    c_patch((address)&insn, 1, 0, op);                                                       \
-    c_patch_reg((address)&insn, 2, x0);                                                      \
-    c_patch_reg((address)&insn, 7, Rs1);                                                     \
-    c_patch((address)&insn, 15, 12, funct4);                                                 \
-    emit_int16(insn);                                                                        \
+ private:
+  // All calls and jumps must go via MASM.
+  // Format CR, c.jr/c.jalr
+  // Note C instruction can't be changed, i.e. relocation patching.
+  template <uint8_t InstructionType, uint8_t FunctionType>
+  void c_cr_if(Register Rs1) {
+    assert_cond(Rs1 != x0);
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, FunctionType);
+    c_patch_reg((address)&insn, 2, x0);
+    c_patch_reg((address)&insn, 7, Rs1);
+    c_patch((address)&insn, 15, 12, InstructionType);
+    emit_int16(insn);
   }
 
-  INSN(c_jr,   0b1000, 0b10);
-  INSN(c_jalr, 0b1001, 0b10);
-
-#undef INSN
+  void c_jr(Register Rs1)   { c_cr_if<0b1000, 0b10>(Rs1); }
+  void c_jalr(Register Rs1) { c_cr_if<0b1001, 0b10>(Rs1); }
 
   typedef void (Assembler::* j_c_insn)(address dest);
   typedef void (Assembler::* compare_and_branch_c_insn)(Register Rs1, address dest);
@@ -2374,39 +3098,40 @@ public:
     }
   }
 
-#define INSN(NAME, funct3, op)                                                               \
-  void NAME(int32_t offset) {                                                                \
-    assert_cond(is_imm_in_range(offset, 11, 1));                                             \
-    uint16_t insn = 0;                                                                       \
-    c_patch((address)&insn, 1, 0, op);                                                       \
-    c_patch((address)&insn, 2, 2, (offset & nth_bit(5)) >> 5);                               \
-    c_patch((address)&insn, 5, 3, (offset & right_n_bits(4)) >> 1);                          \
-    c_patch((address)&insn, 6, 6, (offset & nth_bit(7)) >> 7);                               \
-    c_patch((address)&insn, 7, 7, (offset & nth_bit(6)) >> 6);                               \
-    c_patch((address)&insn, 8, 8, (offset & nth_bit(10)) >> 10);                             \
-    c_patch((address)&insn, 10, 9, (offset & right_n_bits(10)) >> 8);                        \
-    c_patch((address)&insn, 11, 11, (offset & nth_bit(4)) >> 4);                             \
-    c_patch((address)&insn, 12, 12, (offset & nth_bit(11)) >> 11);                           \
-    c_patch((address)&insn, 15, 13, funct3);                                                 \
-    emit_int16(insn);                                                                        \
-  }                                                                                          \
-  void NAME(address dest) {                                                                  \
-    assert_cond(dest != NULL);                                                               \
-    int64_t distance = dest - pc();                                                          \
-    assert_cond(is_imm_in_range(distance, 11, 1));                                           \
-    c_j(distance);                                                                           \
-  }                                                                                          \
-  void NAME(Label &L) {                                                                      \
-    wrap_label(L, &Assembler::NAME);                                                         \
+  // Format CJ, c.j (c.jal)
+  // Note C instruction can't be changed, i.e. relocation patching.
+  void c_j(int32_t offset) {
+    assert(is_simm12(offset) && ((offset % 2) == 0), "invalid encoding");
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, 0b01);
+    c_patch((address)&insn, 2, 2, (offset & nth_bit(5)) >> 5);
+    c_patch((address)&insn, 5, 3, (offset & right_n_bits(4)) >> 1);
+    c_patch((address)&insn, 6, 6, (offset & nth_bit(7)) >> 7);
+    c_patch((address)&insn, 7, 7, (offset & nth_bit(6)) >> 6);
+    c_patch((address)&insn, 8, 8, (offset & nth_bit(10)) >> 10);
+    c_patch((address)&insn, 10, 9, (offset & right_n_bits(10)) >> 8);
+    c_patch((address)&insn, 11, 11, (offset & nth_bit(4)) >> 4);
+    c_patch((address)&insn, 12, 12, (offset & nth_bit(11)) >> 11);
+    c_patch((address)&insn, 15, 13, 0b101);
+    emit_int16(insn);
   }
 
-  INSN(c_j, 0b101, 0b01);
+  void c_j(address dest) {
+    assert_cond(dest != nullptr);
+    int64_t distance = dest - pc();
+    assert(is_simm12(distance) && ((distance % 2) == 0), "invalid encoding");
+    c_j(distance);
+  }
 
-#undef INSN
+  void c_j(Label &L) {
+    wrap_label(L, &Assembler::c_j);
+  }
+
+  public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rs1, int32_t imm) {                                                     \
-    assert_cond(is_imm_in_range(imm, 8, 1));                                                 \
+    assert(is_simm9(imm) && ((imm % 2) == 0), "invalid encoding");                           \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
     c_patch((address)&insn, 2, 2, (imm & nth_bit(5)) >> 5);                                  \
@@ -2419,9 +3144,9 @@ public:
     emit_int16(insn);                                                                        \
   }                                                                                          \
   void NAME(Register Rs1, address dest) {                                                    \
-    assert_cond(dest != NULL);                                                               \
+    assert_cond(dest != nullptr);                                                            \
     int64_t distance = dest - pc();                                                          \
-    assert_cond(is_imm_in_range(distance, 8, 1));                                            \
+    assert(is_simm9(distance) && ((distance % 2) == 0), "invalid encoding");                 \
     NAME(Rs1, distance);                                                                     \
   }                                                                                          \
   void NAME(Register Rs1, Label &L) {                                                        \
@@ -2435,7 +3160,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rd, int32_t imm) {                                                      \
-    assert_cond(is_imm_in_range(imm, 18, 0));                                                \
+    assert_cond(is_simm18(imm));                                                             \
     assert_cond((imm & 0xfff) == 0);                                                         \
     assert_cond(imm != 0);                                                                   \
     assert_cond(Rd != x0 && Rd != x2);                                                       \
@@ -2454,7 +3179,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rd, int32_t imm) {                                                      \
-    assert_cond(is_imm_in_range(imm, 6, 0));                                                 \
+    assert_cond(is_simm6(imm));                                                              \
     assert_cond(Rd != x0);                                                                   \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
@@ -2471,7 +3196,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rd, uint32_t uimm) {                                                    \
-    assert_cond(is_unsigned_imm_in_range(uimm, 9, 0));                                       \
+    assert_cond(is_uimm9(uimm));                                                             \
     assert_cond((uimm & 0b111) == 0);                                                        \
     assert_cond(Rd != x0);                                                                   \
     uint16_t insn = 0;                                                                       \
@@ -2490,7 +3215,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(FloatRegister Rd, uint32_t uimm) {                                               \
-    assert_cond(is_unsigned_imm_in_range(uimm, 9, 0));                                       \
+    assert_cond(is_uimm9(uimm));                                                             \
     assert_cond((uimm & 0b111) == 0);                                                        \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
@@ -2508,7 +3233,7 @@ public:
 
 #define INSN(NAME, funct3, op, REGISTER_TYPE)                                                \
   void NAME(REGISTER_TYPE Rd_Rs2, Register Rs1, uint32_t uimm) {                             \
-    assert_cond(is_unsigned_imm_in_range(uimm, 8, 0));                                       \
+    assert_cond(is_uimm8(uimm));                                                             \
     assert_cond((uimm & 0b111) == 0);                                                        \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
@@ -2529,7 +3254,7 @@ public:
 
 #define INSN(NAME, funct3, op, REGISTER_TYPE)                                                \
   void NAME(REGISTER_TYPE Rs2, uint32_t uimm) {                                              \
-    assert_cond(is_unsigned_imm_in_range(uimm, 9, 0));                                       \
+    assert_cond(is_uimm9(uimm));                                                             \
     assert_cond((uimm & 0b111) == 0);                                                        \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
@@ -2547,7 +3272,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rs2, uint32_t uimm) {                                                   \
-    assert_cond(is_unsigned_imm_in_range(uimm, 8, 0));                                       \
+    assert_cond(is_uimm8(uimm));                                                             \
     assert_cond((uimm & 0b11) == 0);                                                         \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
@@ -2564,7 +3289,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rd, uint32_t uimm) {                                                    \
-    assert_cond(is_unsigned_imm_in_range(uimm, 8, 0));                                       \
+    assert_cond(is_uimm8(uimm));                                                             \
     assert_cond((uimm & 0b11) == 0);                                                         \
     assert_cond(Rd != x0);                                                                   \
     uint16_t insn = 0;                                                                       \
@@ -2583,7 +3308,7 @@ public:
 
 #define INSN(NAME, funct3, op)                                                               \
   void NAME(Register Rd_Rs2, Register Rs1, uint32_t uimm) {                                  \
-    assert_cond(is_unsigned_imm_in_range(uimm, 7, 0));                                       \
+    assert_cond(is_uimm7(uimm));                                                             \
     assert_cond((uimm & 0b11) == 0);                                                         \
     uint16_t insn = 0;                                                                       \
     c_patch((address)&insn, 1, 0, op);                                                       \
@@ -2678,14 +3403,10 @@ public:
 
 private:
 // some helper functions
-  bool do_compress() const {
-    return UseRVC && in_compressible_region();
-  }
-
 #define FUNC(NAME, funct3, bits)                                                             \
   bool NAME(Register rs1, Register rd_rs2, int32_t imm12, bool ld) {                         \
     return rs1 == sp &&                                                                      \
-      is_unsigned_imm_in_range(imm12, bits, 0) &&                                            \
+      is_uimm(imm12, bits) &&                                                                \
       (intx(imm12) & funct3) == 0x0 &&                                                       \
       (!ld || rd_rs2 != x0);                                                                 \
   }                                                                                          \
@@ -2698,7 +3419,7 @@ private:
 #define FUNC(NAME, funct3, bits)                                                             \
   bool NAME(Register rs1, int32_t imm12) {                                                   \
     return rs1 == sp &&                                                                      \
-      is_unsigned_imm_in_range(imm12, bits, 0) &&                                            \
+      is_uimm(imm12, bits) &&                                                                \
       (intx(imm12) & funct3) == 0x0;                                                         \
   }                                                                                          \
 
@@ -2710,7 +3431,7 @@ private:
   bool NAME(Register rs1, REG_TYPE rd_rs2, int32_t imm12) {                                  \
     return rs1->is_compressed_valid() &&                                                     \
       rd_rs2->is_compressed_valid() &&                                                       \
-      is_unsigned_imm_in_range(imm12, bits, 0) &&                                            \
+      is_uimm(imm12, bits) &&                                                                \
       (intx(imm12) & funct3) == 0x0;                                                         \
   }                                                                                          \
 
@@ -2721,184 +3442,144 @@ private:
 #undef FUNC
 
 public:
+  bool do_compress() const {
+    return UseRVC && in_compressible_scope();
+  }
+
+  bool do_compress_zcb(Register reg1 = noreg, Register reg2 = noreg) const {
+    return do_compress() && UseZcb &&
+           (reg1 == noreg || reg1->is_compressed_valid()) && (reg2 == noreg || reg2->is_compressed_valid());
+  }
+
+  bool do_compress_zcb_zbb(Register reg1 = noreg, Register reg2 = noreg) const {
+    return do_compress_zcb(reg1, reg2) && UseZbb;
+  }
+
 // --------------------------
 // Load/store register
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs, const int32_t offset) {                                \
-    /* lw -> c.lwsp/c.lw */                                                                  \
-    if (do_compress()) {                                                                     \
-      if (is_c_lwswsp(Rs, Rd, offset, true)) {                                               \
-        c_lwsp(Rd, offset);                                                                  \
-        return;                                                                              \
-      } else if (is_c_lwsw(Rs, Rd, offset)) {                                                \
-        c_lw(Rd, Rs, offset);                                                                \
-        return;                                                                              \
-      }                                                                                      \
-    }                                                                                        \
-    _lw(Rd, Rs, offset);                                                                     \
+  void lw(Register Rd, Register Rs, const int32_t offset) {
+    /* lw -> c.lwsp/c.lw */
+    if (do_compress()) {
+      if (is_c_lwswsp(Rs, Rd, offset, true)) {
+        c_lwsp(Rd, offset);
+        return;
+      } else if (is_c_lwsw(Rs, Rd, offset)) {
+        c_lw(Rd, Rs, offset);
+        return;
+      }
+    }
+    _lw(Rd, Rs, offset);
   }
 
-  INSN(lw);
-
-#undef INSN
-
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs, const int32_t offset) {                                \
-    /* ld -> c.ldsp/c.ld */                                                                  \
-    if (do_compress()) {                                                                     \
-      if (is_c_ldsdsp(Rs, Rd, offset, true)) {                                               \
-        c_ldsp(Rd, offset);                                                                  \
-        return;                                                                              \
-      } else if (is_c_ldsd(Rs, Rd, offset)) {                                                \
-        c_ld(Rd, Rs, offset);                                                                \
-        return;                                                                              \
-      }                                                                                      \
-    }                                                                                        \
-    _ld(Rd, Rs, offset);                                                                     \
+  void ld(Register Rd, Register Rs, const int32_t offset) {
+    /* ld -> c.ldsp/c.ld */
+    if (do_compress()) {
+      if (is_c_ldsdsp(Rs, Rd, offset, true)) {
+        c_ldsp(Rd, offset);
+        return;
+      } else if (is_c_ldsd(Rs, Rd, offset)) {
+        c_ld(Rd, Rs, offset);
+        return;
+      }
+    }
+    _ld(Rd, Rs, offset);
   }
 
-  INSN(ld);
-
-#undef INSN
-
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(FloatRegister Rd, Register Rs, const int32_t offset) {                           \
-    /* fld -> c.fldsp/c.fld */                                                               \
-    if (do_compress()) {                                                                     \
-      if (is_c_fldsdsp(Rs, offset)) {                                                        \
-        c_fldsp(Rd, offset);                                                                 \
-        return;                                                                              \
-      } else if (is_c_fldsd(Rs, Rd, offset)) {                                               \
-        c_fld(Rd, Rs, offset);                                                               \
-        return;                                                                              \
-      }                                                                                      \
-    }                                                                                        \
-    _fld(Rd, Rs, offset);                                                                    \
+  void fld(FloatRegister Rd, Register Rs, const int32_t offset) {
+    /* fld -> c.fldsp/c.fld */
+    if (do_compress()) {
+      if (is_c_fldsdsp(Rs, offset)) {
+        c_fldsp(Rd, offset);
+        return;
+      } else if (is_c_fldsd(Rs, Rd, offset)) {
+        c_fld(Rd, Rs, offset);
+        return;
+      }
+    }
+    _fld(Rd, Rs, offset);
   }
 
-  INSN(fld);
-
-#undef INSN
-
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs, const int32_t offset) {                                \
-    /* sd -> c.sdsp/c.sd */                                                                  \
-    if (do_compress()) {                                                                     \
-      if (is_c_ldsdsp(Rs, Rd, offset, false)) {                                              \
-        c_sdsp(Rd, offset);                                                                  \
-        return;                                                                              \
-      } else if (is_c_ldsd(Rs, Rd, offset)) {                                                \
-        c_sd(Rd, Rs, offset);                                                                \
-        return;                                                                              \
-      }                                                                                      \
-    }                                                                                        \
-    _sd(Rd, Rs, offset);                                                                     \
+  void sd(Register Rs2, Register Rs1, const int32_t offset) {
+    /* sd -> c.sdsp/c.sd */
+    if (do_compress()) {
+      if (is_c_ldsdsp(Rs1, Rs2, offset, false)) {
+        c_sdsp(Rs2, offset);
+        return;
+      } else if (is_c_ldsd(Rs1, Rs2, offset)) {
+        c_sd(Rs2, Rs1, offset);
+        return;
+      }
+    }
+    _sd(Rs2, Rs1, offset);
   }
 
-  INSN(sd);
-
-#undef INSN
-
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs, const int32_t offset) {                                \
-    /* sw -> c.swsp/c.sw */                                                                  \
-    if (do_compress()) {                                                                     \
-      if (is_c_lwswsp(Rs, Rd, offset, false)) {                                              \
-        c_swsp(Rd, offset);                                                                  \
-        return;                                                                              \
-      } else if (is_c_lwsw(Rs, Rd, offset)) {                                                \
-        c_sw(Rd, Rs, offset);                                                                \
-        return;                                                                              \
-      }                                                                                      \
-    }                                                                                        \
-    _sw(Rd, Rs, offset);                                                                     \
+  void sw(Register Rs2, Register Rs1, const int32_t offset) {
+    /* sw -> c.swsp/c.sw */
+    if (do_compress()) {
+      if (is_c_lwswsp(Rs1, Rs2, offset, false)) {
+        c_swsp(Rs2, offset);
+        return;
+      } else if (is_c_lwsw(Rs1, Rs2, offset)) {
+        c_sw(Rs2, Rs1, offset);
+        return;
+      }
+    }
+    _sw(Rs2, Rs1, offset);
   }
 
-  INSN(sw);
-
-#undef INSN
-
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(FloatRegister Rd, Register Rs, const int32_t offset) {                           \
-    /* fsd -> c.fsdsp/c.fsd */                                                               \
-    if (do_compress()) {                                                                     \
-      if (is_c_fldsdsp(Rs, offset)) {                                                        \
-        c_fsdsp(Rd, offset);                                                                 \
-        return;                                                                              \
-      } else if (is_c_fldsd(Rs, Rd, offset)) {                                               \
-        c_fsd(Rd, Rs, offset);                                                               \
-        return;                                                                              \
-      }                                                                                      \
-    }                                                                                        \
-    _fsd(Rd, Rs, offset);                                                                    \
+  void fsd(FloatRegister Rs2, Register Rs1, const int32_t offset) {
+    /* fsd -> c.fsdsp/c.fsd */
+    if (do_compress()) {
+      if (is_c_fldsdsp(Rs1, offset)) {
+        c_fsdsp(Rs2, offset);
+        return;
+      } else if (is_c_fldsd(Rs1, Rs2, offset)) {
+        c_fsd(Rs2, Rs1, offset);
+        return;
+      }
+    }
+    _fsd(Rs2, Rs1, offset);
   }
-
-  INSN(fsd);
-
-#undef INSN
-
-// --------------------------
-// Conditional branch instructions
-// --------------------------
-#define INSN(NAME, C_NAME, NORMAL_NAME)                                                      \
-  void NAME(Register Rs1, Register Rs2, const int64_t offset) {                              \
-    /* beq/bne -> c.beqz/c.bnez */                                                           \
-    if (do_compress() &&                                                                     \
-        (offset != 0 && Rs2 == x0 && Rs1->is_compressed_valid() &&                           \
-        is_imm_in_range(offset, 8, 1))) {                                                    \
-      C_NAME(Rs1, offset);                                                                   \
-      return;                                                                                \
-    }                                                                                        \
-    NORMAL_NAME(Rs1, Rs2, offset);                                                           \
-  }
-
-  INSN(beq, c_beqz, _beq);
-  INSN(bne, c_bnez, _bne);
-
-#undef INSN
 
 // --------------------------
 // Unconditional branch instructions
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, const int32_t offset) {                                             \
-    /* jal -> c.j */                                                                         \
-    if (do_compress() && offset != 0 && Rd == x0 && is_imm_in_range(offset, 11, 1)) {        \
-      c_j(offset);                                                                           \
-      return;                                                                                \
-    }                                                                                        \
-    _jal(Rd, offset);                                                                        \
+ protected:
+  // All calls and jumps must go via MASM. Only use x1 (aka ra) as link register for now.
+  void jalr(Register Rd, Register Rs, const int32_t offset) {
+    assert(Rd != x5 && Rs != x5, "Register x5 must not be used for calls/jumps.");
+    /* jalr -> c.jr/c.jalr */
+    if (do_compress() && (offset == 0 && Rs != x0)) {
+      if (Rd == x1) {
+        c_jalr(Rs);
+        return;
+      } else if (Rd == x0) {
+        c_jr(Rs);
+        return;
+      }
+    }
+    _jalr(Rd, Rs, offset);
   }
 
-  INSN(jal);
-
-#undef INSN
-
-// --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs, const int32_t offset) {                                \
-    /* jalr -> c.jr/c.jalr */                                                                \
-    if (do_compress() && (offset == 0 && Rs != x0)) {                                        \
-      if (Rd == x1) {                                                                        \
-        c_jalr(Rs);                                                                          \
-        return;                                                                              \
-      } else if (Rd == x0) {                                                                 \
-        c_jr(Rs);                                                                            \
-        return;                                                                              \
-      }                                                                                      \
-    }                                                                                        \
-    _jalr(Rd, Rs, offset);                                                                   \
+  void jal(Register Rd, const int32_t offset) {
+    assert(Rd != x5, "Register x5 must not be used for calls/jumps.");
+    /* jal -> c.j, note c.jal is RV32C only */
+    if (do_compress() &&
+        Rd == x0 &&
+        is_simm12(offset) && ((offset % 2) == 0)) {
+      c_j(offset);
+      return;
+    }
+    _jal(Rd, offset);
   }
 
-  INSN(jalr);
-
-#undef INSN
+  public:
 
 // --------------------------
 // Miscellaneous Instructions
@@ -2921,35 +3602,20 @@ public:
 // Immediate Instructions
 // --------------------------
 #define INSN(NAME)                                                                           \
-  void NAME(Register Rd, int64_t imm) {                                                      \
-    /* li -> c.li */                                                                         \
-    if (do_compress() && (is_imm_in_range(imm, 6, 0) && Rd != x0)) {                         \
-      c_li(Rd, imm);                                                                         \
-      return;                                                                                \
-    }                                                                                        \
-    _li(Rd, imm);                                                                            \
-  }
-
-  INSN(li);
-
-#undef INSN
-
-// --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs1, int32_t imm) {                                        \
+  void NAME(Register Rd, Register Rs1, int64_t imm) {                                        \
     /* addi -> c.addi/c.nop/c.mv/c.addi16sp/c.addi4spn */                                    \
     if (do_compress()) {                                                                     \
-      if (Rd == Rs1 && is_imm_in_range(imm, 6, 0)) {                                         \
+      if (Rd == Rs1 && is_simm6(imm)) {                                                      \
         c_addi(Rd, imm);                                                                     \
         return;                                                                              \
       } else if (imm == 0 && Rd != x0 && Rs1 != x0) {                                        \
         c_mv(Rd, Rs1);                                                                       \
         return;                                                                              \
       } else if (Rs1 == sp && imm != 0) {                                                    \
-        if (Rd == Rs1 && (imm & 0b1111) == 0x0 && is_imm_in_range(imm, 10, 0)) {             \
+        if (Rd == Rs1 && (imm & 0b1111) == 0x0 && is_simm10(imm)) {                          \
           c_addi16sp(imm);                                                                   \
           return;                                                                            \
-        } else if (Rd->is_compressed_valid() && (imm & 0b11) == 0x0 && is_unsigned_imm_in_range(imm, 10, 0)) { \
+        } else if (Rd->is_compressed_valid() && (imm & 0b11) == 0x0 && is_uimm10(imm)) {     \
           c_addi4spn(Rd, imm);                                                               \
           return;                                                                            \
         }                                                                                    \
@@ -2964,9 +3630,9 @@ public:
 
 // --------------------------
 #define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs1, int32_t imm) {                                        \
+  void NAME(Register Rd, Register Rs1, int64_t imm) {                                        \
     /* addiw -> c.addiw */                                                                   \
-    if (do_compress() && (Rd == Rs1 && Rd != x0 && is_imm_in_range(imm, 6, 0))) {            \
+    if (do_compress() && (Rd == Rs1 && Rd != x0 && is_simm6(imm))) {                         \
       c_addiw(Rd, imm);                                                                      \
       return;                                                                                \
     }                                                                                        \
@@ -2979,17 +3645,17 @@ public:
 
 // --------------------------
 #define INSN(NAME)                                                                           \
-  void NAME(Register Rd, Register Rs1, int32_t imm) {                                        \
-    /* and_imm12 -> c.andi */                                                                \
+  void NAME(Register Rd, Register Rs1, int64_t imm) {                                        \
+    /* andi -> c.andi */                                                                     \
     if (do_compress() &&                                                                     \
-        (Rd == Rs1 && Rd->is_compressed_valid() && is_imm_in_range(imm, 6, 0))) {            \
+        (Rd == Rs1 && Rd->is_compressed_valid() && is_simm6(imm))) {                         \
       c_andi(Rd, imm);                                                                       \
       return;                                                                                \
     }                                                                                        \
-    _and_imm12(Rd, Rs1, imm);                                                                \
+    _andi(Rd, Rs1, imm);                                                                     \
   }
 
-  INSN(and_imm12);
+  INSN(andi);
 
 #undef INSN
 
@@ -3003,7 +3669,13 @@ public:
       c_slli(Rd, shamt);                                                                     \
       return;                                                                                \
     }                                                                                        \
-    _slli(Rd, Rs1, shamt);                                                                   \
+    if (shamt != 0) {                                                                        \
+      _slli(Rd, Rs1, shamt);                                                                 \
+    } else {                                                                                 \
+      if (Rd != Rs1) {                                                                       \
+        addi(Rd, Rs1, 0);                                                                    \
+      }                                                                                      \
+    }                                                                                        \
   }
 
   INSN(slli);
@@ -3018,7 +3690,13 @@ public:
       C_NAME(Rd, shamt);                                                                     \
       return;                                                                                \
     }                                                                                        \
-    NORMAL_NAME(Rd, Rs1, shamt);                                                             \
+    if (shamt != 0) {                                                                        \
+      NORMAL_NAME(Rd, Rs1, shamt);                                                           \
+    } else {                                                                                 \
+      if (Rd != Rs1) {                                                                       \
+        addi(Rd, Rs1, 0);                                                                    \
+      }                                                                                      \
+    }                                                                                        \
   }
 
   INSN(srai, c_srai, _srai);
@@ -3029,69 +3707,377 @@ public:
 // --------------------------
 // Upper Immediate Instruction
 // --------------------------
-#define INSN(NAME)                                                                           \
-  void NAME(Register Rd, int32_t imm) {                                                      \
-    /* lui -> c.lui */                                                                       \
-    if (do_compress() && (Rd != x0 && Rd != x2 && imm != 0 && is_imm_in_range(imm, 18, 0))) { \
-      c_lui(Rd, imm);                                                                        \
-      return;                                                                                \
-    }                                                                                        \
-    _lui(Rd, imm);                                                                           \
+  void lui(Register Rd, int32_t imm) {
+    /* lui -> c.lui */
+    if (do_compress() && (Rd != x0 && Rd != x2 && imm != 0 && is_simm18(imm))) {
+      c_lui(Rd, imm);
+      return;
+    }
+    _lui(Rd, imm);
   }
 
-  INSN(lui);
 
-#undef INSN
+// Cache Management Operations
+// These instruction may be turned off for user space.
+ private:
+  enum CBO_FUNCT : unsigned int {
+    CBO_INVAL = 0b0000000000000,
+    CBO_CLEAN = 0b0000000000001,
+    CBO_FLUSH = 0b0000000000010,
+    CBO_ZERO  = 0b0000000000100
+  };
 
-// ---------------------------------------------------------------------------------------
+  template <CBO_FUNCT FUNCT>
+  void cbo_base(Register Rs1) {
+    assert((UseZicbom && FUNCT != CBO_ZERO) || UseZicboz, "sanity");
+    unsigned insn = 0;
+    patch((address)&insn, 6,  0, 0b0001111);
+    patch((address)&insn, 14, 12, 0b010);
+    patch_reg((address)&insn, 15, Rs1);
+    patch((address)&insn, 31, 20, FUNCT);
+    emit(insn);
+  }
 
-  void bgt(Register Rs, Register Rt, const address &dest);
-  void ble(Register Rs, Register Rt, const address &dest);
-  void bgtu(Register Rs, Register Rt, const address &dest);
-  void bleu(Register Rs, Register Rt, const address &dest);
-  void bgt(Register Rs, Register Rt, Label &l, bool is_far = false);
-  void ble(Register Rs, Register Rt, Label &l, bool is_far = false);
-  void bgtu(Register Rs, Register Rt, Label &l, bool is_far = false);
-  void bleu(Register Rs, Register Rt, Label &l, bool is_far = false);
+  // This instruction have some security implication.
+  // At this time it's not likely to be enabled for user mode.
+  void cbo_inval(Register Rs1) { cbo_base<CBO_INVAL>(Rs1); }
+ public:
+  // Zicbom
+  void cbo_clean(Register Rs1) { cbo_base<CBO_CLEAN>(Rs1); }
+  void cbo_flush(Register Rs1) { cbo_base<CBO_FLUSH>(Rs1); }
+  // Zicboz
+  void cbo_zero(Register Rs1)  { cbo_base<CBO_ZERO>(Rs1); }
 
-  typedef void (Assembler::* jal_jalr_insn)(Register Rt, address dest);
-  typedef void (Assembler::* load_insn_by_temp)(Register Rt, address dest, Register temp);
-  typedef void (Assembler::* compare_and_branch_insn)(Register Rs1, Register Rs2, const address dest);
-  typedef void (Assembler::* compare_and_branch_label_insn)(Register Rs1, Register Rs2, Label &L, bool is_far);
+ private:
+  enum PREFETCH_FUNCT : unsigned int {
+    PREFETCH_I = 0b0000000000000,
+    PREFETCH_R = 0b0000000000001,
+    PREFETCH_W = 0b0000000000011
+  };
 
-  void wrap_label(Register r1, Register r2, Label &L, compare_and_branch_insn insn,
-                  compare_and_branch_label_insn neg_insn, bool is_far);
-  void wrap_label(Register r, Label &L, Register t, load_insn_by_temp insn);
-  void wrap_label(Register r, Label &L, jal_jalr_insn insn);
+  template <PREFETCH_FUNCT FUNCT>
+  void prefetch_base(Register Rs1, int32_t offset) {
+    assert_cond(UseZicbop);
+    guarantee((offset & 0x1f) == 0, "offset lowest 5 bits must be zero");
+    int32_t upperOffset = offset >> 5;
+    unsigned insn = 0;
+    patch((address)&insn, 6,  0, 0b0010011);
+    patch((address)&insn, 14, 12, 0b110);
+    patch_reg((address)&insn, 15, Rs1);
+    patch((address)&insn, 24, 20, FUNCT);
+    upperOffset &= 0x7f;
+    patch((address)&insn, 31, 25, upperOffset);
+    emit(insn);
+  }
 
-  // calculate pseudoinstruction
-  void add(Register Rd, Register Rn, int64_t increment, Register temp = t0);
-  void addw(Register Rd, Register Rn, int64_t increment, Register temp = t0);
-  void sub(Register Rd, Register Rn, int64_t decrement, Register temp = t0);
-  void subw(Register Rd, Register Rn, int64_t decrement, Register temp = t0);
+ public:
+  // Zicbop
+  void prefetch_i(Register Rs1, int32_t offset) { prefetch_base<PREFETCH_I>(Rs1, offset); }
+  void prefetch_r(Register Rs1, int32_t offset) { prefetch_base<PREFETCH_R>(Rs1, offset); }
+  void prefetch_w(Register Rs1, int32_t offset) { prefetch_base<PREFETCH_W>(Rs1, offset); }
 
-  // RVB pseudo instructions
-  // zero extend word
-  void zext_w(Register Rd, Register Rs);
+// --------------  Zicond Instruction Definitions  --------------
+// Zicond conditional operations extension
+  private:
+  enum CZERO_OP : unsigned int {
+    CZERO_NEZ = 0b111,
+    CZERO_EQZ = 0b101
+  };
 
-  Assembler(CodeBuffer* code) : AbstractAssembler(code), _in_compressible_region(false) {
+  template <CZERO_OP OP_VALUE>
+  void czero(Register Rd, Register Rs1, Register Rs2) {
+    assert_cond(UseZicond);
+    uint32_t insn = 0;
+    patch    ((address)&insn,  6,  0, 0b0110011);  // bits:  7, name: 0x33, attr: ['OP']
+    patch_reg((address)&insn,      7, Rd);         // bits:  5, name: 'rd'
+    patch    ((address)&insn, 14, 12, OP_VALUE);   // bits:  3, name: 0x7, attr: ['CZERO.NEZ'] / 0x5, attr: ['CZERO.EQZ']}
+    patch_reg((address)&insn,     15, Rs1);        // bits:  5, name: 'rs1', attr: ['value']
+    patch_reg((address)&insn,     20, Rs2);        // bits:  5, name: 'rs2', attr: ['condition']
+    patch    ((address)&insn, 31, 25, 0b0000111);  // bits:  7, name: 0x7, attr: ['CZERO']
+    emit_int32(insn);
+  }
+
+  public:
+  // Moves zero to a register rd, if the condition rs2 is equal to zero, otherwise moves rs1 to rd.
+  void czero_eqz(Register rd, Register rs1_value, Register rs2_condition) {
+    czero<CZERO_EQZ>(rd, rs1_value, rs2_condition);
+  }
+
+  // Moves zero to a register rd, if the condition rs2 is nonzero, otherwise moves rs1 to rd.
+  void czero_nez(Register rd, Register rs1_value, Register rs2_condition) {
+    czero<CZERO_NEZ>(rd, rs1_value, rs2_condition);
+  }
+
+// --------------  ZCB Instruction Definitions  --------------
+// Zcb additional C instructions
+ private:
+  // Format CLH, c.lh/c.lhu
+  template <bool Unsigned>
+  void c_lh_if(Register Rd_Rs2, Register Rs1, uint32_t uimm) {
+    assert_cond(uimm == 0 || uimm == 2);
+    assert_cond(do_compress_zcb(Rd_Rs2, Rs1));
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, 0b00);
+    c_patch_compressed_reg((address)&insn, 2, Rd_Rs2);
+    c_patch((address)&insn, 5, 5, (uimm & nth_bit(1)) >> 1);
+    c_patch((address)&insn, 6, 6, Unsigned ? 0 : 1);
+    c_patch_compressed_reg((address)&insn, 7, Rs1);
+    c_patch((address)&insn, 12, 10, 0b001);
+    c_patch((address)&insn, 15, 13, 0b100);
+    emit_int16(insn);
+  }
+
+  template <bool Unsigned>
+  void lh_c_mux(Register Rd_Rs2, Register Rs1, const int32_t uimm) {
+    if (do_compress_zcb(Rd_Rs2, Rs1) &&
+        (uimm == 0 || uimm == 2)) {
+      c_lh_if<Unsigned>(Rd_Rs2, Rs1, uimm);
+    } else {
+      if (Unsigned) {
+        _lhu(Rd_Rs2, Rs1, uimm);
+      } else {
+        _lh(Rd_Rs2, Rs1, uimm);
+      }
+    }
+  }
+
+  // Format CU, c.[sz]ext.*, c.not
+  template <uint8_t InstructionType>
+  void c_u_if(Register Rs1) {
+    assert_cond(do_compress_zcb(Rs1));
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, 0b01);
+    c_patch((address)&insn, 4, 2, InstructionType);
+    c_patch((address)&insn, 6, 5, 0b11);
+    c_patch_compressed_reg((address)&insn, 7, Rs1);
+    c_patch((address)&insn, 12, 10, 0b111);
+    c_patch((address)&insn, 15, 13, 0b100);
+    emit_int16(insn);
+  }
+
+ public:
+
+  // Prerequisites: Zcb
+  void c_lh(Register Rd_Rs2, Register Rs1, const int32_t uimm)  {  c_lh_if<false>(Rd_Rs2, Rs1, uimm); }
+  void lh(Register Rd_Rs2, Register Rs1, const int32_t uimm)    { lh_c_mux<false>(Rd_Rs2, Rs1, uimm); }
+
+  // Prerequisites: Zcb
+  void c_lhu(Register Rd_Rs2, Register Rs1, const int32_t uimm) {  c_lh_if<true>(Rd_Rs2, Rs1, uimm); }
+  void lhu(Register Rd_Rs2, Register Rs1, const int32_t uimm)   { lh_c_mux<true>(Rd_Rs2, Rs1, uimm); }
+
+  // Prerequisites: Zcb
+  // Format CLB, single instruction
+  void c_lbu(Register Rd_Rs2, Register Rs1, uint32_t uimm) {
+    assert_cond(uimm <= 3);
+    assert_cond(do_compress_zcb(Rd_Rs2, Rs1));
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, 0b00);
+    c_patch_compressed_reg((address)&insn, 2, Rd_Rs2);
+    c_patch((address)&insn, 5, 5, (uimm & nth_bit(1)) >> 1);
+    c_patch((address)&insn, 6, 6, (uimm & nth_bit(0)) >> 0);
+    c_patch_compressed_reg((address)&insn, 7, Rs1);
+    c_patch((address)&insn, 12, 10, 0b000);
+    c_patch((address)&insn, 15, 13, 0b100);
+    emit_int16(insn);
+  }
+
+  void lbu(Register Rd_Rs2, Register Rs1, const int32_t uimm) {
+    if (do_compress_zcb(Rd_Rs2, Rs1) &&
+        uimm >= 0 && uimm <= 3) {
+      c_lbu(Rd_Rs2, Rs1, uimm);
+    } else {
+      _lbu(Rd_Rs2, Rs1, uimm);
+    }
+  }
+
+  // Prerequisites: Zcb
+  // Format CSB, single instruction
+  void c_sb(Register Rd_Rs2, Register Rs1, uint32_t uimm) {
+    assert_cond(uimm <= 3);
+    assert_cond(do_compress_zcb(Rd_Rs2, Rs1));
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, 0b00);
+    c_patch_compressed_reg((address)&insn, 2, Rd_Rs2);
+    c_patch((address)&insn, 5, 5, (uimm & nth_bit(1)) >> 1);
+    c_patch((address)&insn, 6, 6, (uimm & nth_bit(0)) >> 0);
+    c_patch_compressed_reg((address)&insn, 7, Rs1);
+    c_patch((address)&insn, 12, 10, 0b010);
+    c_patch((address)&insn, 15, 13, 0b100);
+    emit_int16(insn);
+  }
+
+  void sb(Register Rd_Rs2, Register Rs1, const int32_t uimm) {
+    if (do_compress_zcb(Rd_Rs2, Rs1) &&
+        uimm >= 0 && uimm <= 3) {
+      c_sb(Rd_Rs2, Rs1, uimm);
+    } else {
+      _sb(Rd_Rs2, Rs1, uimm);
+    }
+  }
+
+  // Prerequisites: Zcb
+  // Format CSH, single instruction
+  void c_sh(Register Rd_Rs2, Register Rs1, uint32_t uimm) {
+    assert_cond(uimm == 0 || uimm == 2);
+    assert_cond(do_compress_zcb(Rd_Rs2, Rs1));
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, 0b00);
+    c_patch_compressed_reg((address)&insn, 2, Rd_Rs2);
+    c_patch((address)&insn, 5, 5, (uimm & nth_bit(1)) >> 1);
+    c_patch((address)&insn, 6, 6, 0);
+    c_patch_compressed_reg((address)&insn, 7, Rs1);
+    c_patch((address)&insn, 12, 10, 0b011);
+    c_patch((address)&insn, 15, 13, 0b100);
+    emit_int16(insn);
+  }
+
+  void sh(Register Rd_Rs2, Register Rs1, const int32_t uimm) {
+    if (do_compress_zcb(Rd_Rs2, Rs1) &&
+        (uimm == 0 || uimm == 2)) {
+      c_sh(Rd_Rs2, Rs1, uimm);
+    } else {
+      _sh(Rd_Rs2, Rs1, uimm);
+    }
+  }
+
+  // Prerequisites: Zcb
+  // Format CS
+  void c_zext_b(Register Rs1) {
+    assert_cond(do_compress_zcb(Rs1));
+    c_u_if<0b000>(Rs1);
+  }
+
+  // Prerequisites: Zbb
+  void sext_b(Register Rd_Rs2, Register Rs1) {
+    assert_cond(UseZbb);
+    if (do_compress_zcb_zbb(Rd_Rs2, Rs1) && (Rd_Rs2 == Rs1)) {
+      c_sext_b(Rd_Rs2);
+    } else {
+      _sext_b(Rd_Rs2, Rs1);
+    }
+  }
+
+  // Prerequisites: Zcb, Zbb
+  // Format CS
+  void c_sext_b(Register Rs1) {
+    c_u_if<0b001>(Rs1);
+  }
+
+  // Prerequisites: Zbb
+  void zext_h(Register Rd_Rs2, Register Rs1) {
+    assert_cond(UseZbb);
+    if (do_compress_zcb_zbb(Rd_Rs2, Rs1) && (Rd_Rs2 == Rs1)) {
+      c_zext_h(Rd_Rs2);
+    } else {
+      _zext_h(Rd_Rs2, Rs1);
+    }
+  }
+
+  // Prerequisites: Zcb, Zbb
+  // Format CS
+  void c_zext_h(Register Rs1) {
+    c_u_if<0b010>(Rs1);
+  }
+
+  // Prerequisites: Zbb
+  void sext_h(Register Rd_Rs2, Register Rs1) {
+    assert_cond(UseZbb);
+    if (do_compress_zcb_zbb(Rd_Rs2, Rs1) && (Rd_Rs2 == Rs1)) {
+      c_sext_h(Rd_Rs2);
+    } else {
+      _sext_h(Rd_Rs2, Rs1);
+    }
+  }
+
+  // Prerequisites: Zcb, Zbb
+  // Format CS
+  void c_sext_h(Register Rs1) {
+    c_u_if<0b011>(Rs1);
+  }
+
+  // Prerequisites: Zcb, Zba
+  // Format CS
+  void c_zext_w(Register Rs1) {
+    c_u_if<0b100>(Rs1);
+  }
+
+  // Prerequisites: Zcb
+  // Format CS
+  void c_not(Register Rs1) {
+    c_u_if<0b101>(Rs1);
+  }
+
+  // Prerequisites: Zcb (M or Zmmul)
+  // Format CA, c.mul
+  void c_mul(Register Rd_Rs1, Register Rs2) {
+    uint16_t insn = 0;
+    c_patch((address)&insn, 1, 0, 0b01);
+    c_patch_compressed_reg((address)&insn, 2, Rs2);
+    c_patch((address)&insn, 6, 5, 0b10);
+    c_patch_compressed_reg((address)&insn, 7, Rd_Rs1);
+    c_patch((address)&insn, 12, 10, 0b111);
+    c_patch((address)&insn, 15, 13, 0b100);
+    emit_int16(insn);
+  }
+
+  void mul(Register Rd, Register Rs1, Register Rs2) {
+    if (Rd != Rs1 && Rd != Rs2) {
+      // Three registers needed without a mv, emit uncompressed
+      _mul(Rd, Rs1, Rs2);
+      return;
+    }
+
+    // Rd is either Rs1 or Rs2
+    if (!do_compress_zcb(Rs2, Rs1)) {
+      _mul(Rd, Rs1, Rs2);
+    } else {
+      if (Rd == Rs2) {
+        Rs2 = Rs1;
+      } else {
+        assert(Rd == Rs1, "must be");
+      }
+      c_mul(Rd, Rs2);
+    }
   }
 
   // Stack overflow checking
   virtual void bang_stack_with_offset(int offset) { Unimplemented(); }
 
-  static bool operand_valid_for_add_immediate(long imm) {
-    return is_imm_in_range(imm, 12, 0);
-  }
+  static bool is_simm5(int64_t x);
+  static bool is_simm6(int64_t x);
+  static bool is_simm12(int64_t x);
+  static bool is_simm13(int64_t x);
+  static bool is_simm18(int64_t x);
+  static bool is_simm21(int64_t x);
+
+  static bool is_uimm2(uint64_t x);
+  static bool is_uimm3(uint64_t x);
+  static bool is_uimm5(uint64_t x);
+  static bool is_uimm6(uint64_t x);
+  static bool is_uimm7(uint64_t x);
+  static bool is_uimm8(uint64_t x);
+  static bool is_uimm9(uint64_t x);
+  static bool is_uimm10(uint64_t x);
 
   // The maximum range of a branch is fixed for the RISCV architecture.
   static const unsigned long branch_range = 1 * M;
 
   static bool reachable_from_branch_at(address branch, address target) {
-    return uabs(target - branch) < branch_range;
+    return g_uabs(target - branch) < branch_range;
   }
 
-  virtual ~Assembler() {}
+  // Decode the given instruction, checking if it's a 16-bit compressed
+  // instruction and return the address of the next instruction.
+  static address locate_next_instruction(address inst) {
+    // Instruction wider than 16 bits has the two least-significant bits set.
+    if ((0x3 & *inst) == 0x3) {
+      return inst + instruction_size;
+    } else {
+      return inst + compressed_instruction_size;
+    }
+  }
+
+  Assembler(CodeBuffer* code) : AbstractAssembler(code), _in_compressible_scope(true) {}
 };
 
 #endif // CPU_RISCV_ASSEMBLER_RISCV_HPP

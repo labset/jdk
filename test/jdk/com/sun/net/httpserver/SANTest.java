@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -24,10 +24,10 @@
 /**
  * @test
  * @bug 8278312
- * @library /test/lib /test/jdk/java/net/httpclient /test/jdk/java/net/httpclient/http2/server
- * @build jdk.test.lib.net.SimpleSSLContext HttpServerAdapters Http2Handler
- *          jdk.test.lib.net.IPSupport
- *          Http2TestExchange
+ * @library /test/lib /test/jdk/java/net/httpclient /test/jdk/java/net/httpclient/lib
+ * @build jdk.test.lib.net.SimpleSSLContext jdk.httpclient.test.lib.common.HttpServerAdapters
+ *        jdk.httpclient.test.lib.http2.Http2TestServer
+ *        jdk.test.lib.net.IPSupport
  *
  * @modules java.net.http/jdk.internal.net.http.common
  *          java.net.http/jdk.internal.net.http.frame
@@ -36,6 +36,18 @@
  *          java.base/sun.net.www.http
  *          java.base/sun.net.www
  *          java.base/sun.net
+ *          java.base/jdk.internal.net.quic
+ *          java.net.http/jdk.internal.net.http.quic
+ *          java.net.http/jdk.internal.net.http.quic.packets
+ *          java.net.http/jdk.internal.net.http.quic.frames
+ *          java.net.http/jdk.internal.net.http.quic.streams
+ *          java.net.http/jdk.internal.net.http.http3.streams
+ *          java.net.http/jdk.internal.net.http.http3.frames
+ *          java.net.http/jdk.internal.net.http.http3
+ *          java.net.http/jdk.internal.net.http.qpack
+ *          java.net.http/jdk.internal.net.http.qpack.readers
+ *          java.net.http/jdk.internal.net.http.qpack.writers
+ *          java.base/jdk.internal.util
  *
  * @run main/othervm SANTest
  * @summary Update SimpleSSLContext keystore to use SANs for localhost IP addresses
@@ -52,6 +64,8 @@ import javax.net.ssl.*;
 import jdk.test.lib.net.SimpleSSLContext;
 import jdk.test.lib.net.URIBuilder;
 import jdk.test.lib.net.IPSupport;
+import jdk.httpclient.test.lib.common.HttpServerAdapters;
+import jdk.httpclient.test.lib.http2.Http2TestServer;
 
 /*
  * Will fail if the testkeys file belonging to SimpleSSLContext
@@ -59,7 +73,7 @@ import jdk.test.lib.net.IPSupport;
  */
 public class SANTest implements HttpServerAdapters {
 
-    static SSLContext ctx;
+    private static final SSLContext ctx = SimpleSSLContext.findSSLContext();
 
     static HttpServer getHttpsServer(InetSocketAddress addr, Executor exec, SSLContext ctx) throws Exception {
         HttpsServer server = HttpsServer.create(addr, 0);
@@ -108,7 +122,6 @@ public class SANTest implements HttpServerAdapters {
         ExecutorService executor=null;
         try {
             System.out.print ("SANTest: ");
-            ctx = new SimpleSSLContext().get();
             executor = Executors.newCachedThreadPool();
 
             InetAddress l1 = InetAddress.getByName("::1");

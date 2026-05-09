@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2005, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -1856,6 +1856,14 @@ class JapaneseImperialCalendar extends Calendar {
 
         if (isSet(ERA)) {
             era = internalGet(ERA);
+            // Don't check under, historically we have allowed values under
+            // BEFORE_MEIJI to be ignored during normalization
+            // We check against eras.length (not the highest constant ERA value)
+            // due to future added eras, or additional eras via
+            // "jdk.calendar.japanese.supplemental.era"
+            if (era >= eras.length) {
+                throw new IllegalArgumentException("Invalid era");
+            }
             year = isSet(YEAR) ? internalGet(YEAR) : 1;
         } else {
             if (isSet(YEAR)) {
@@ -2118,7 +2126,6 @@ class JapaneseImperialCalendar extends Calendar {
      * @param fixedDate the fixed date representation of the date
      */
     private long getFixedDateJan1(LocalGregorianCalendar.Date date, long fixedDate) {
-        Era era = date.getEra();
         if (date.getEra() != null && date.getYear() == 1) {
             for (int eraIndex = getEraIndex(date); eraIndex > 0; eraIndex--) {
                 CalendarDate d = eras[eraIndex].getSinceDate();

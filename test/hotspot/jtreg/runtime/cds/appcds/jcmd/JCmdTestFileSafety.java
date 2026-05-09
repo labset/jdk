@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2021, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,9 +29,9 @@
  * @requires vm.cds
  * @library /test/lib /test/hotspot/jtreg/runtime/cds/appcds /test/hotspot/jtreg/runtime/cds/appcds/test-classes
  * @modules jdk.jcmd/sun.tools.common:+open
- * @build jdk.test.lib.apps.LingeredApp sun.hotspot.WhiteBox Hello
+ * @build jdk.test.lib.apps.LingeredApp jdk.test.whitebox.WhiteBox Hello
  *        JCmdTestDumpBase JCmdTestLingeredApp JCmdTestFileSafety
- * @run driver jdk.test.lib.helpers.ClassFileInstaller sun.hotspot.WhiteBox
+ * @run driver jdk.test.lib.helpers.ClassFileInstaller jdk.test.whitebox.WhiteBox
  * @run main/othervm/timeout=480 -Xbootclasspath/a:. -XX:+UnlockDiagnosticVMOptions -XX:+WhiteBoxAPI JCmdTestFileSafety
  */
 
@@ -140,6 +140,9 @@ public class JCmdTestFileSafety extends JCmdTestDumpBase {
             // Set dir to not accessible for write, we still can run the test
             // to create archive successfully which is not expected.
             throw new jtreg.SkippedException("Test skipped on Windows");
+        }
+        if (Platform.isRoot()) {
+            throw new jtreg.SkippedException("Test skipped when executed by root user.");
         }
         runTest(JCmdTestFileSafety::test);
     }

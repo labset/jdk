@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2021, Azul Systems, Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -29,13 +29,14 @@
 // No interfaceSupport.hpp
 
 #include "gc/shared/gc_globals.hpp"
+#include "runtime/globals.hpp"
 #include "runtime/handles.inline.hpp"
+#include "runtime/javaThread.inline.hpp"
 #include "runtime/mutexLocker.hpp"
 #include "runtime/orderAccess.hpp"
 #include "runtime/os.hpp"
 #include "runtime/safepointMechanism.inline.hpp"
 #include "runtime/safepointVerifiers.hpp"
-#include "runtime/thread.hpp"
 #include "runtime/threadWXSetters.inline.hpp"
 #include "runtime/vmOperations.hpp"
 #include "utilities/globalDefinitions.hpp"
@@ -79,7 +80,7 @@ class ThreadStateTransition : public StackObj {
 
  public:
   ThreadStateTransition(JavaThread *thread) : _thread(thread) {
-    assert(thread != NULL, "must be active Java thread");
+    assert(thread != nullptr, "must be active Java thread");
     assert(thread == Thread::current(), "must be current thread");
   }
 
@@ -97,7 +98,11 @@ class ThreadStateTransition : public StackObj {
     assert(to == _thread_in_vm || to == _thread_in_Java, "invalid transition");
     assert(!thread->has_last_Java_frame() || thread->frame_anchor()->walkable(), "Unwalkable stack in native transition");
 
-    thread->set_thread_state_fence(_thread_in_vm);
+    if (!UseSystemMemoryBarrier) {
+      thread->set_thread_state_fence(_thread_in_vm);
+    } else {
+      thread->set_thread_state(_thread_in_vm);
+    }
     SafepointMechanism::process_if_requested_with_exit_check(thread, to != _thread_in_Java ? false : check_asyncs);
     thread->set_thread_state(to);
   }
@@ -140,7 +145,7 @@ class ThreadInVMfromJava : public ThreadStateTransition {
 class ThreadInVMfromUnknown {
   JavaThread* _thread;
  public:
-  ThreadInVMfromUnknown() : _thread(NULL) {
+  ThreadInVMfromUnknown() : _thread(nullptr) {
     Thread* t = Thread::current();
     if (t->is_Java_thread()) {
       JavaThread* t2 = JavaThread::cast(t);
@@ -254,14 +259,12 @@ class VMNativeEntryWrapper {
 // in the codecache.
 
 #define VM_LEAF_BASE(result_type, header)                            \
-  debug_only(NoHandleMark __hm;)                                     \
-  MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite,                    \
-                                         JavaThread::current()));    \
+  DEBUG_ONLY(NoHandleMark __hm;)                                     \
   os::verify_stack_alignment();                                      \
   /* begin of body */
 
 #define VM_ENTRY_BASE_FROM_LEAF(result_type, header, thread)         \
-  debug_only(ResetNoHandleMark __rnhm;)                              \
+  DEBUG_ONLY(ResetNoHandleMark __rnhm;)                              \
   HandleMarkCleaner __hm(thread);                                    \
   JavaThread* THREAD = thread; /* For exception macros. */           \
   os::verify_stack_alignment();                                      \
@@ -276,14 +279,16 @@ class VMNativeEntryWrapper {
   os::verify_stack_alignment();                                      \
   /* begin of body */
 
-
 #define JRT_ENTRY(result_type, header)                               \
   result_type header {                                               \
     assert(current == JavaThread::current(), "Must be");             \
-    MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, current));       \
     ThreadInVMfromJava __tiv(current);                               \
+    MACOS_AARCH64_ONLY(                                              \
+      static WXMode wx_mode = DefaultWXWriteMode;                    \
+      ThreadWXEnable __wx(&wx_mode, current);                        \
+    )                                                                \
     VM_ENTRY_BASE(result_type, header, current)                      \
-    debug_only(VMEntryWrapper __vew;)
+    DEBUG_ONLY(VMEntryWrapper __vew;)
 
 // JRT_LEAF currently can be called from either _thread_in_Java or
 // _thread_in_native mode.
@@ -302,23 +307,29 @@ class VMNativeEntryWrapper {
 #define JRT_LEAF(result_type, header)                                \
   result_type header {                                               \
   VM_LEAF_BASE(result_type, header)                                  \
-  debug_only(NoSafepointVerifier __nsv;)
+  DEBUG_ONLY(NoSafepointVerifier __nsv;)
 
 
 #define JRT_ENTRY_NO_ASYNC(result_type, header)                      \
   result_type header {                                               \
     assert(current == JavaThread::current(), "Must be");             \
-    MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, current));       \
     ThreadInVMfromJava __tiv(current, false /* check asyncs */);     \
+    MACOS_AARCH64_ONLY(                                              \
+      static WXMode wx_mode = DefaultWXWriteMode;                    \
+      ThreadWXEnable __wx(&wx_mode, current);                        \
+    )                                                                \
     VM_ENTRY_BASE(result_type, header, current)                      \
-    debug_only(VMEntryWrapper __vew;)
+    DEBUG_ONLY(VMEntryWrapper __vew;)
 
 // Same as JRT Entry but allows for return value after the safepoint
 // to get back into Java from the VM
 #define JRT_BLOCK_ENTRY(result_type, header)                         \
   result_type header {                                               \
     assert(current == JavaThread::current(), "Must be");             \
-    MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, current));       \
+    MACOS_AARCH64_ONLY(                                              \
+      static WXMode wx_mode = DefaultWXWriteMode;                    \
+      ThreadWXEnable __wx(&wx_mode, current);                        \
+    )                                                                \
     HandleMarkCleaner __hm(current);
 
 #define JRT_BLOCK                                                    \
@@ -326,14 +337,14 @@ class VMNativeEntryWrapper {
     assert(current == JavaThread::current(), "Must be");             \
     ThreadInVMfromJava __tiv(current);                               \
     JavaThread* THREAD = current; /* For exception macros. */        \
-    debug_only(VMEntryWrapper __vew;)
+    DEBUG_ONLY(VMEntryWrapper __vew;)
 
 #define JRT_BLOCK_NO_ASYNC                                           \
     {                                                                \
     assert(current == JavaThread::current(), "Must be");             \
     ThreadInVMfromJava __tiv(current, false /* check asyncs */);     \
     JavaThread* THREAD = current; /* For exception macros. */        \
-    debug_only(VMEntryWrapper __vew;)
+    DEBUG_ONLY(VMEntryWrapper __vew;)
 
 #define JRT_BLOCK_END }
 
@@ -355,9 +366,12 @@ extern "C" {                                                         \
   result_type JNICALL header {                                       \
     JavaThread* thread=JavaThread::thread_from_jni_environment(env); \
     assert(thread == Thread::current(), "JNIEnv is only valid in same thread"); \
-    MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, thread));        \
     ThreadInVMfromNative __tiv(thread);                              \
-    debug_only(VMNativeEntryWrapper __vew;)                          \
+    MACOS_AARCH64_ONLY(                                              \
+      static WXMode wx_mode = DefaultWXWriteMode;                    \
+      ThreadWXEnable __wx(&wx_mode, thread);                         \
+    )                                                                \
+    DEBUG_ONLY(VMNativeEntryWrapper __vew;)                          \
     VM_ENTRY_BASE(result_type, header, thread)
 
 
@@ -380,9 +394,12 @@ extern "C" {                                                         \
 extern "C" {                                                         \
   result_type JNICALL header {                                       \
     JavaThread* thread=JavaThread::thread_from_jni_environment(env); \
-    MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, thread));        \
     ThreadInVMfromNative __tiv(thread);                              \
-    debug_only(VMNativeEntryWrapper __vew;)                          \
+    MACOS_AARCH64_ONLY(                                              \
+      static WXMode wx_mode = DefaultWXWriteMode;                    \
+      ThreadWXEnable __wx(&wx_mode, thread);                         \
+    )                                                                \
+    DEBUG_ONLY(VMNativeEntryWrapper __vew;)                          \
     VM_ENTRY_BASE(result_type, header, thread)
 
 
@@ -390,9 +407,12 @@ extern "C" {                                                         \
 extern "C" {                                                         \
   result_type JNICALL header {                                       \
     JavaThread* thread = JavaThread::current();                      \
-    MACOS_AARCH64_ONLY(ThreadWXEnable __wx(WXWrite, thread));        \
     ThreadInVMfromNative __tiv(thread);                              \
-    debug_only(VMNativeEntryWrapper __vew;)                          \
+    MACOS_AARCH64_ONLY(                                              \
+      static WXMode wx_mode = DefaultWXWriteMode;                    \
+      ThreadWXEnable __wx(&wx_mode, thread);                         \
+    )                                                                \
+    DEBUG_ONLY(VMNativeEntryWrapper __vew;)                          \
     VM_ENTRY_BASE(result_type, header, thread)
 
 
@@ -407,7 +427,7 @@ extern "C" {                                                         \
   { {                                                                \
     JavaThread* thread=JavaThread::thread_from_jni_environment(env); \
     ThreadInVMfromNative __tiv(thread);                              \
-    debug_only(VMNativeEntryWrapper __vew;)                          \
+    DEBUG_ONLY(VMNativeEntryWrapper __vew;)                          \
     VM_ENTRY_BASE_FROM_LEAF(result_type, header, thread)
 
 

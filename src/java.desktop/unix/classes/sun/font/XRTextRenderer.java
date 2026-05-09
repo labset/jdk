@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2010, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2010, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -36,8 +36,8 @@ import sun.java2d.xr.*;
  *
  * @author Clemens Eisserer
  */
-public class XRTextRenderer extends GlyphListPipe {
-    // Workarround for a bug in libXrender.
+public final class XRTextRenderer extends GlyphListPipe {
+    // Workaround for a bug in libXrender.
     // In case the number of glyphs of an ELT is a multiple of 254,
     // a few garbage bytes are sent to the XServer causing hangs.
     static final int MAX_ELT_GLYPH_COUNT = 253;
@@ -55,6 +55,7 @@ public class XRTextRenderer extends GlyphListPipe {
         eltList = new GrowableEltArray(64);
     }
 
+    @Override
     protected void drawGlyphList(SunGraphics2D sg2d, GlyphList gl) {
         if (gl.getNumGlyphs() == 0) {
             return;
@@ -122,7 +123,7 @@ public class XRTextRenderer extends GlyphListPipe {
                         /*
                          * Calculate next glyph's position in the case of
                          * relative positioning. In XRender we can only position
-                         * glyphs using integer coordinates, therefor we sum all
+                         * glyphs using integer coordinates, therefore we sum all
                          * the advances up as float, and convert them to integer
                          * later. This way rounding-error can be corrected, and
                          * is required to be consistent with the software loops.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2019, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -53,10 +53,10 @@ class InstanceRefKlass: public InstanceKlass {
   static const KlassKind Kind = InstanceRefKlassKind;
 
  private:
-  InstanceRefKlass(const ClassFileParser& parser) : InstanceKlass(parser, Kind) {}
+  InstanceRefKlass(const ClassFileParser& parser);
 
  public:
-  InstanceRefKlass() { assert(DumpSharedSpaces || UseSharedSpaces, "only for CDS"); }
+  InstanceRefKlass();
 
   // Oop fields (and metadata) iterators
   //
@@ -108,12 +108,6 @@ class InstanceRefKlass: public InstanceKlass {
   template <typename T, class OopClosureType, class Contains>
   static void oop_oop_iterate_discovery(oop obj, ReferenceType type, OopClosureType* closure, Contains& contains);
 
-  // Used for a special case in G1 where the closure needs to be applied
-  // to the discovered field. Reference discovery is also done if the
-  // closure provides a ReferenceProcessor.
-  template <typename T, class OopClosureType, class Contains>
-  static void oop_oop_iterate_discovered_and_discovery(oop obj, ReferenceType type, OopClosureType* closure, Contains& contains);
-
   // Apply the closure to all fields. No reference discovery is done.
   template <typename T, class OopClosureType, class Contains>
   static void oop_oop_iterate_fields(oop obj, OopClosureType* closure, Contains& contains);
@@ -132,7 +126,7 @@ class InstanceRefKlass: public InstanceKlass {
 
  public:
   // Verification
-  void oop_verify_on(oop obj, outputStream* st);
+  void oop_verify_on(oop obj, outputStream* st) override;
 };
 
 #endif // SHARE_OOPS_INSTANCEREFKLASS_HPP

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 1997, 2021, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 1997, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -155,7 +155,7 @@ implements ItemSelectable,ListDataListener,ActionListener, Accessible {
      * This protected field is implementation specific. Do not access directly
      * or override. Use the accessor methods instead.
      *
-     * @see #isEditable
+     * @see #isEditable()
      * @see #setEditable
      */
     protected boolean isEditable  = false;
@@ -1101,15 +1101,15 @@ implements ItemSelectable,ListDataListener,ActionListener, Accessible {
             = "the Action instance connected with this ActionEvent source")
     public void setAction(Action a) {
         Action oldValue = getAction();
-        if (action==null || !action.equals(a)) {
+        if (action == null || !action.equals(a)) {
             action = a;
-            if (oldValue!=null) {
+            if (oldValue != null) {
                 removeActionListener(oldValue);
                 oldValue.removePropertyChangeListener(actionPropertyChangeListener);
                 actionPropertyChangeListener = null;
             }
             configurePropertiesFromAction(action);
-            if (action!=null) {
+            if (action != null) {
                 // Don't add if it is already a listener
                 if (!isListener(ActionListener.class, action)) {
                     addActionListener(action);
@@ -1721,7 +1721,7 @@ implements ItemSelectable,ListDataListener,ActionListener, Accessible {
         }
 
         /*
-         * Sets the combo box editor's accessible name and descripton
+         * Sets the combo box editor's accessible name and description
          */
         private void setEditorNameAndDescription() {
             ComboBoxEditor editor = JComboBox.this.getEditor();

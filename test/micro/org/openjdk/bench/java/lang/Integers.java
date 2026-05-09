@@ -52,6 +52,7 @@ public class Integers {
     @Param("500")
     private int size;
 
+    private int bound;
     private String[] strings;
     private int[] intsTiny;
     private int[] intsSmall;
@@ -61,6 +62,7 @@ public class Integers {
     @Setup
     public void setup() {
         Random r  = new Random(0);
+        bound = 50;
         strings   = new String[size];
         intsTiny  = new int[size];
         intsSmall = new int[size];
@@ -150,9 +152,32 @@ public class Integers {
     }
 
     @Benchmark
+    public void compareUnsignedIndirect(Blackhole bh) {
+        for (int i = 0; i < size; i++) {
+            int r = (Integer.compareUnsigned(intsSmall[i], bound - 16) < 0) ? 1 : 0;
+            bh.consume(r);
+        }
+    }
+
+    @Benchmark
+    public void compareUnsignedDirect(Blackhole bh) {
+        for (int i = 0; i < size; i++) {
+            int r = Integer.compareUnsigned(intsSmall[i], bound - 16);
+            bh.consume(r);
+        }
+    }
+
+    @Benchmark
     public void reverseBytes() {
         for (int i = 0; i < size; i++) {
             res[i] = Integer.reverseBytes(intsSmall[i]);
+        }
+    }
+
+    @Benchmark
+    public void reverse() {
+        for (int i = 0; i < size; i++) {
+            res[i] = Integer.reverse(intsSmall[i]);
         }
     }
 }

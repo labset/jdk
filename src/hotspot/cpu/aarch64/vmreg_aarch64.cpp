@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2006, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2006, 2025, Oracle and/or its affiliates. All rights reserved.
  * Copyright (c) 2014, Red Hat Inc. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
@@ -23,7 +23,6 @@
  *
  */
 
-#include "precompiled.hpp"
 #include "asm/assembler.hpp"
 #include "code/vmreg.hpp"
 #include "vmreg_aarch64.inline.hpp"
@@ -33,7 +32,7 @@ void VMRegImpl::set_regName() {
   Register reg = ::as_Register(0);
   int i;
   for (i = 0; i < ConcreteRegisterImpl::max_gpr ; ) {
-    for (int j = 0 ; j < RegisterImpl::max_slots_per_register ; j++) {
+    for (int j = 0 ; j < Register::max_slots_per_register ; j++) {
       regName[i++] = reg->name();
     }
     reg = reg->successor();
@@ -41,7 +40,7 @@ void VMRegImpl::set_regName() {
 
   FloatRegister freg = ::as_FloatRegister(0);
   for ( ; i < ConcreteRegisterImpl::max_fpr ; ) {
-    for (int j = 0 ; j < FloatRegisterImpl::max_slots_per_register ; j++) {
+    for (int j = 0 ; j < FloatRegister::max_slots_per_register ; j++) {
       regName[i++] = freg->name();
     }
     freg = freg->successor();

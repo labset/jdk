@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2000, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -81,8 +81,7 @@ lookupIfLocalhost(JNIEnv *env, const char *hostname, jboolean includeV6, int cha
     jobjectArray result = NULL;
     char myhostname[NI_MAXHOST + 1];
     struct ifaddrs *ifa = NULL;
-    int familyOrder = 0;
-    int count = 0, i, j;
+    int i, j;
     int addrs4 = 0, addrs6 = 0, numV4Loopbacks = 0, numV6Loopbacks = 0;
     jboolean includeLoopback = JNI_FALSE;
     jobject name;
@@ -127,7 +126,7 @@ lookupIfLocalhost(JNIEnv *env, const char *hostname, jboolean includeV6, int cha
     while (iter) {
         if (iter->ifa_addr != NULL) {
             int family = iter->ifa_addr->sa_family;
-            if (iter->ifa_name[0] != '\0') {
+            if (iter->ifa_name[0] != '\0' && (iter->ifa_flags & IFF_UP) == IFF_UP) {
                 jboolean isLoopback = iter->ifa_flags & IFF_LOOPBACK;
                 if (family == AF_INET) {
                     addrs4++;
@@ -164,7 +163,7 @@ lookupIfLocalhost(JNIEnv *env, const char *hostname, jboolean includeV6, int cha
     // Now loop around the ifaddrs
     iter = ifa;
     while (iter != NULL) {
-        if (iter->ifa_addr != NULL) {
+        if (iter->ifa_addr != NULL && (iter->ifa_flags & IFF_UP) == IFF_UP) {
             jboolean isLoopback = iter->ifa_flags & IFF_LOOPBACK;
             int family = iter->ifa_addr->sa_family;
 
@@ -220,7 +219,7 @@ Java_java_net_Inet6AddressImpl_lookupAllHostAddr(JNIEnv *env, jobject this,
         JNU_ThrowNullPointerException(env, "host argument is null");
         return NULL;
     }
-    hostname = JNU_GetStringPlatformChars(env, host, NULL);
+    hostname = JNU_GetStringPlatformCharsStrict(env, host, NULL);
     CHECK_NULL_RETURN(hostname, NULL);
 
     // try once, with our static buffer
@@ -228,9 +227,12 @@ Java_java_net_Inet6AddressImpl_lookupAllHostAddr(JNIEnv *env, jobject this,
     hints.ai_flags = AI_CANONNAME;
     hints.ai_family = lookupCharacteristicsToAddressFamily(characteristics);
 
-    error = getaddrinfo(hostname, NULL, &hints, &res);
+    NET_RESTARTABLE(error, getaddrinfo(hostname, NULL, &hints, &res),
+                                      error == EAI_SYSTEM && errno == EINTR);
 
     if (error) {
+        // capture the errno from getaddrinfo
+        const int sys_errno = errno;
 #if defined(MACOSX)
         // if getaddrinfo fails try getifaddrs
         ret = lookupIfLocalhost(env, hostname, JNI_TRUE, characteristics);
@@ -239,7 +241,7 @@ Java_java_net_Inet6AddressImpl_lookupAllHostAddr(JNIEnv *env, jobject this,
         }
 #endif
         // report error
-        NET_ThrowUnknownHostExceptionWithGaiError(env, hostname, error);
+        NET_ThrowUnknownHostExceptionWithGaiError(env, hostname, error, sys_errno);
         goto cleanupAndReturn;
     } else {
         int i = 0, inetCount = 0, inet6Count = 0, inetIndex = 0,
@@ -431,16 +433,20 @@ Java_java_net_Inet6AddressImpl_getHostByAddr(JNIEnv *env, jobject this,
         len = sizeof(struct sockaddr_in6);
     }
 
-    if (getnameinfo(&sa.sa, len, host, sizeof(host), NULL, 0, NI_NAMEREQD)) {
-        JNU_ThrowByName(env, "java/net/UnknownHostException", NULL);
-    } else {
+    int r;
+
+    NET_RESTARTABLE(r, getnameinfo(&sa.sa, len, host, sizeof(host), NULL, 0, NI_NAMEREQD),
+                    r == EAI_SYSTEM && errno == EINTR);
+
+    if (r == 0) {
         ret = (*env)->NewStringUTF(env, host);
-        if (ret == NULL) {
-            JNU_ThrowByName(env, "java/net/UnknownHostException", NULL);
+        if (ret != NULL) {
+            return ret;
         }
     }
 
-    return ret;
+    JNU_ThrowByName(env, "java/net/UnknownHostException", NULL);
+    return NULL;
 }
 
 /**
@@ -464,12 +470,16 @@ tcp_ping6(JNIEnv *env, SOCKETADDRESS *sa, SOCKETADDRESS *netif, jint timeout,
 
     // set TTL
     if (ttl > 0) {
-        setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, sizeof(ttl));
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, sizeof(ttl)) < 0) {
+            NET_ThrowNew(env, errno, "setsockopt IPV6_UNICAST_HOPS failed");
+            close(fd);
+            return JNI_FALSE;
+        }
     }
 
     // A network interface was specified, so let's bind to it.
     if (netif != NULL) {
-        if (bind(fd, &netif->sa, sizeof(struct sockaddr_in6)) <0) {
+        if (bind(fd, &netif->sa, sizeof(struct sockaddr_in6)) < 0) {
             NET_ThrowNew(env, errno, "Can't bind socket");
             close(fd);
             return JNI_FALSE;
@@ -480,7 +490,8 @@ tcp_ping6(JNIEnv *env, SOCKETADDRESS *sa, SOCKETADDRESS *netif, jint timeout,
     SET_NONBLOCKING(fd);
 
     sa->sa6.sin6_port = htons(7); // echo port
-    connect_rv = NET_Connect(fd, &sa->sa, sizeof(struct sockaddr_in6));
+    NET_RESTARTABLE(connect_rv, connect(fd, &sa->sa, sizeof(struct sockaddr_in6)),
+                    connect_rv == -1 && errno == EINTR);
 
     // connection established or refused immediately, either way it means
     // we were able to reach the host!
@@ -546,7 +557,7 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
     struct icmp6_hdr *icmp6;
     struct sockaddr_in6 sa_recv;
     jchar pid;
-    struct timeval tv;
+    struct timeval tv = { 0, 0 };
     size_t plen = sizeof(struct icmp6_hdr) + sizeof(tv);
 
 #if defined(__linux__)
@@ -558,11 +569,19 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
     setsockopt(fd, SOL_RAW, IPV6_CHECKSUM, &csum_offset, sizeof(int));
 #endif
 
-    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size));
+    if (setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &size, sizeof(size)) < 0) {
+        NET_ThrowNew(env, errno, "setsockopt SO_RCVBUF failed");
+        close(fd);
+        return JNI_FALSE;
+    }
 
     // sets the ttl (max number of hops)
     if (ttl > 0) {
-        setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, sizeof(ttl));
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_HOPS, &ttl, sizeof(ttl)) < 0) {
+            NET_ThrowNew(env, errno, "setsockopt IPV6_UNICAST_HOPS failed");
+            close(fd);
+            return JNI_FALSE;
+        }
     }
 
     // a specific interface was specified, so let's bind the socket
@@ -593,7 +612,10 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
         memcpy(sendbuf + sizeof(struct icmp6_hdr), &tv, sizeof(tv));
         icmp6->icmp6_cksum = 0;
         // send it
-        n = sendto(fd, sendbuf, plen, 0, &sa->sa, sizeof(struct sockaddr_in6));
+
+        NET_RESTARTABLE(n, sendto(fd, sendbuf, plen, 0, &sa->sa, sizeof(struct sockaddr_in6)),
+                        n == -1 && errno == EINTR);
+
         if (n < 0 && errno != EINPROGRESS) {
 #if defined(__linux__)
             /*
@@ -617,8 +639,9 @@ ping6(JNIEnv *env, jint fd, SOCKETADDRESS *sa, SOCKETADDRESS *netif,
             tmout2 = NET_Wait(env, fd, NET_WAIT_READ, tmout2);
             if (tmout2 >= 0) {
                 len = sizeof(sa_recv);
-                n = recvfrom(fd, recvbuf, sizeof(recvbuf), 0,
-                             (struct sockaddr *)&sa_recv, &len);
+                NET_RESTARTABLE(n, recvfrom(fd, recvbuf, sizeof(recvbuf), 0,
+                                   (struct sockaddr *)&sa_recv, &len),
+                                   n == -1 && errno == EINTR);
                 // check if we received enough data
                 if (n < (jint)sizeof(struct icmp6_hdr)) {
                     continue;

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2018, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -33,36 +33,6 @@ import java.nio.file.Path;
 import java.util.*;
 
 public class FieldGen {
-
-    static FieldParams Curve25519 = new FieldParams(
-            "IntegerPolynomial25519", 26, 10, 1, 255,
-            Arrays.asList(
-                    new Term(0, -19)
-            ),
-            Curve25519CrSequence(), simpleSmallCrSequence(10)
-    );
-
-    private static List<CarryReduce> Curve25519CrSequence() {
-        List<CarryReduce> result = new ArrayList<CarryReduce>();
-
-        // reduce(7,2)
-        result.add(new Reduce(17));
-        result.add(new Reduce(18));
-
-        // carry(8,2)
-        result.add(new Carry(8));
-        result.add(new Carry(9));
-
-        // reduce(0,7)
-        for (int i = 10; i < 17; i++) {
-            result.add(new Reduce(i));
-        }
-
-        // carry(0,9)
-        result.addAll(fullCarry(10));
-
-        return result;
-    }
 
     static FieldParams Curve448 = new FieldParams(
             "IntegerPolynomial448", 28, 16, 1, 448,
@@ -224,8 +194,7 @@ public class FieldGen {
     }
 
     static final FieldParams[] ALL_FIELDS = {
-            Curve25519, Curve448,
-            P256, P384, P521, O256, O384, O521, O25519, O448
+            Curve448, P256, P384, P521, O256, O384, O521, O25519, O448
     };
 
     public static class Term {
@@ -246,8 +215,7 @@ public class FieldGen {
         }
 
         public BigInteger getValue() {
-            return BigInteger.valueOf(2).pow(power)
-                    .multiply(BigInteger.valueOf(coefficient));
+            return BigInteger.valueOf(coefficient).shiftLeft(power);
         }
 
         public String toString() {
@@ -629,7 +597,7 @@ public class FieldGen {
         result.appendLine("private static final long CARRY_ADD = 1 << "
                 + (params.getBitsPerLimb() - 1) + ";");
         if (params.getBitsPerLimb() * params.getNumLimbs() != params.getPower()) {
-            result.appendLine("private static final int LIMB_MASK = -1 "
+            result.appendLine("private static final long LIMB_MASK = -1L "
                     + ">>> (64 - BITS_PER_LIMB);");
         }
 
@@ -663,14 +631,12 @@ public class FieldGen {
                 subtract = true;
             }
             String coefExpr = "BigInteger.valueOf(" + coefValue + ")";
-            String powExpr = "BigInteger.valueOf(2).pow(" + t.getPower() + ")";
+            String powExpr = ".shiftLeft(" + t.getPower() + ")";
             String termExpr = "ERROR";
             if (t.getPower() == 0) {
                 termExpr = coefExpr;
-            } else if (coefValue == 1) {
-                termExpr = powExpr;
             } else {
-                termExpr = powExpr + ".multiply(" + coefExpr + ")";
+                termExpr = coefExpr + powExpr;
             }
             if (subtract) {
                 result.appendLine("result = result.subtract(" + termExpr + ");");

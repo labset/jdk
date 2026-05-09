@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2017, 2025, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -25,46 +25,68 @@
 package sun.nio.ch;
 
 import java.io.IOException;
-import java.util.ServiceConfigurationError;
-import sun.security.action.GetPropertyAction;
 
+/**
+ * Provider class for Poller implementations.
+ */
 abstract class PollerProvider {
-    PollerProvider() { }
+    private final Poller.Mode mode;
 
-    /**
-     * Returns true if threads should register file descriptors directly,
-     * false to queue registrations to an updater thread.
-     *
-     * The default implementation returns false.
-     */
-    boolean useDirectRegister() {
-        return false;
+    PollerProvider(Poller.Mode mode) {
+        this.mode = mode;
+    }
+
+    final Poller.Mode pollerMode() {
+        return mode;
     }
 
     /**
-     * Creates a Poller for read ops.
+     * Creates a PollerProvider that uses its preferred/default poller mode.
      */
-    abstract Poller readPoller() throws IOException;
-
-    /**
-     * Creates a Poller for write ops.
-     */
-    abstract Poller writePoller() throws IOException;
-
-    /**
-     * Creates the PollerProvider.
-     */
-    static PollerProvider provider() {
-        String cn = GetPropertyAction.privilegedGetProperty("jdk.PollerProvider");
-        if (cn != null) {
-            try {
-                Class<?> clazz = Class.forName(cn, true, ClassLoader.getSystemClassLoader());
-                return (PollerProvider) clazz.getConstructor().newInstance();
-            } catch (Exception e) {
-                throw new ServiceConfigurationError(null, e);
-            }
-        } else {
-            return new DefaultPollerProvider();
-        }
+    static PollerProvider createProvider() {
+        return new DefaultPollerProvider();
     }
+
+    /**
+     * Creates a PollerProvider that uses the given poller mode.
+     */
+    static PollerProvider createProvider(Poller.Mode mode) {
+        return new DefaultPollerProvider(mode);
+    }
+
+    /**
+     * Default number of read pollers. The count must be a power of 2.
+     * @implSpec The default implementation returns 1.
+     */
+    int defaultReadPollers() {
+        return 1;
+    }
+
+    /**
+     * Default number of write pollers. The count must be a power of 2.
+     * @implSpec The default implementation returns 1.
+     */
+    int defaultWritePollers() {
+        return 1;
+    }
+
+    /**
+     * Maps a file descriptor to an index from 0 to {@code toIndex}.
+     * @implSpec The default implementation is good for Unix file descriptors.
+     */
+    int fdValToIndex(int fdVal, int toIndex) {
+        return fdVal & (toIndex - 1);
+    }
+
+    /**
+     * Creates a Poller for POLLIN polling.
+     * @param subPoller true to create a sub-poller
+     */
+    abstract Poller readPoller(boolean subPoller) throws IOException;
+
+    /**
+     * Creates a Poller for POLLOUT polling.
+     * @param subPoller true to create a sub-poller
+     */
+    abstract Poller writePoller(boolean subPoller) throws IOException;
 }

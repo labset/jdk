@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019, 2022, Oracle and/or its affiliates. All rights reserved.
+ * Copyright (c) 2019, 2026, Oracle and/or its affiliates. All rights reserved.
  * DO NOT ALTER OR REMOVE COPYRIGHT NOTICES OR THIS FILE HEADER.
  *
  * This code is free software; you can redistribute it and/or modify it
@@ -29,7 +29,7 @@ import jdk.test.lib.cds.CDSOptions;
 import jdk.test.lib.cds.CDSTestUtils;
 import jdk.test.lib.cds.CDSTestUtils.Result;
 import jdk.test.lib.helpers.ClassFileInstaller;
-import sun.hotspot.WhiteBox;
+import jdk.test.whitebox.WhiteBox;
 
 /**
  * Base class for test cases in test/hotspot/jtreg/runtime/cds/appcds/dynamicArchive/
@@ -173,7 +173,7 @@ class DynamicArchiveTestBase {
         String wbJar = ClassFileInstaller.getJarPath("WhiteBox.jar");
         if (!(new File(wbJar)).exists()) {
             throw new RuntimeException("Test error: your test must have " +
-                                       "'@run driver jdk.test.lib.helpers.ClassFileInstaller -jar WhiteBox.jar sun.hotspot.WhiteBox'");
+                                       "'@run driver jdk.test.lib.helpers.ClassFileInstaller -jar WhiteBox.jar jdk.test.whitebox.WhiteBox'");
         }
         return wbJar;
     }
@@ -261,7 +261,7 @@ class DynamicArchiveTestBase {
         if (!executedIn_run) {
             throw new Exception("Test error: dynamic archive tests must be executed via DynamicArchiveTestBase.run()");
         }
-        ProcessBuilder pb = ProcessTools.createTestJvm(cmdLine);
+        ProcessBuilder pb = ProcessTools.createTestJavaProcessBuilder(cmdLine);
         if (jarDir != null) {
             pb.directory(new File(jarDir));
         }
@@ -306,9 +306,8 @@ class DynamicArchiveTestBase {
      *   the JDK was built via cross-compilation on a different platform;
      * - the VM under test was started with a different options than the ones
      *   when the default CDS archive was built. E.g. the VM was started with
-     *   -XX:+UseZGC which implicitly disabled the UseCompressedOoops and the
-     *   UseCompressedClassPointers options. Those "compressed" options were
-     *   enabled when the default CDS archive was built.
+     *   -XX:+UseZGC which implicitly disables the UseCompressedOops option.
+     *   UseCompressedOops was enabled when the default CDS archive was built.
      */
     public static boolean isUseSharedSpacesDisabled() {
         return !WB.isSharingEnabled();
